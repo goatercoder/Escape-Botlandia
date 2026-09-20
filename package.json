@@ -1,0 +1,11 @@
+{
+  "name": "escape-botlandia",
+  "version": "1.0.0",
+  "description": "An 8-bit cash-flow tycoon idle game: start homeless and in debt, work a job, build cash-flow businesses, and escape the rat race of Botlandia before your time runs out.",
+  "private": true,
+  "scripts": {
+    "test": "node --test test/",
+    "check": "for f in *.js; do node --check \"$f\" || exit 1; done",
+    "start": "npx --yes http-server -p 8080 -c-1 ."
+  }
+}

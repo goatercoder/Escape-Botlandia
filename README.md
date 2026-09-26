@@ -1,4 +1,5 @@
 # Escape Botlandia 🤖💸
+*Note: This is currently under development and will be released soon.*
 
 **An 8-bit cash-flow tycoon game.** You wake up homeless and $2,000 in debt in Botlandia, a city run by bots
 where humans live on the Wage Treadmill. Work a job to get your first capital, buy cash-flow businesses, invest,

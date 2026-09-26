@@ -1333,7 +1333,7 @@
     let mode, x, y;
     if (!phone && r.left >= you.left - 2 && r.right <= you.right + 2) { mode = 'right'; x = you.right + 12; y = r.top + r.height / 2; }
     else if (!phone && r.left >= mk.left - 2) { mode = 'left'; x = mk.left - 12; y = r.top + r.height / 2; }
-    else if (r.top < 150) { mode = 'below'; x = r.left + r.width / 2; y = r.bottom + 6; }
+    else if (r.top < 150 || (phone && r.bottom + 60 < innerHeight)) { mode = 'below'; x = r.left + r.width / 2; y = r.bottom + 6; }
     else { mode = 'above'; x = r.left + r.width / 2; y = r.top - 4; }
     box.className = 'm-' + mode;
     $('tut-arrow').textContent = { right: '◀', left: '▶', below: '▲', above: '▼' }[mode];
@@ -1429,7 +1429,7 @@
       const ch = Data.CHAPTERS[S.chapter - 1];
       $('id-name').textContent = S.name;
       const st = $('id-status'); st.textContent = 'STATUS: ' + ch.statusLabel; st.classList.toggle('redacted', S.chapter >= 7);
-      $('id-chapter').textContent = 'CH.' + S.chapter + ' ' + ch.title;
+      $('id-chapter').textContent = 'CH.' + S.chapter + ' ' + humanize('you', ch.title);
       $('id-goal').textContent = goalText(ch);
       if (ui.tipKey && !$('tooltip').hidden) {
         const t = $('tooltip'); const html = tipFor(ui.tipKey); if (html) t.innerHTML = html;

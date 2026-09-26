@@ -1,4 +1,4 @@
-/* ui.js — every piece of DOM for ESCAPE BOTLANDIA (global `UI`): top bar, the Machine, tabs,
+/* ui.js - every piece of DOM for ESCAPE BOTLANDIA (global `UI`): top bar, the Machine, tabs,
  * tooltips, dialogue, toasts, chapter banners, choice events, lesson pages, endings, tutorial. */
 (function (root) {
   'use strict';
@@ -7,6 +7,20 @@
   const $ = (id) => document.getElementById(id);
   const fm = (n) => Engine.fmtMoney(n);
   const fps = (n) => Engine.fmtMoney(n) + '/s';
+  // Cashflow speaks in months: every income/expense line in the UI is per game month (12.5 s).
+  const pm = (n) => Engine.fmtMoney(n) + '/mo';
+  const pct = (x) => (x >= 9.995 ? '999%+' : Engine.fmtPct(x));
+  // Compact money for tight spots (boost buttons): $950, $12K, $1.3M ...
+  function short(n) {
+    const a = Math.abs(n);
+    if (a < 1000) return '$' + Math.round(a);
+    const u = [[1e15, 'Qa'], [1e12, 'T'], [1e9, 'B'], [1e6, 'M'], [1e3, 'K']];
+    for (const [v, k] of u) if (a >= v) { const x = a / v; return '$' + (x < 10 ? x.toFixed(1) : Math.round(x)) + k; }
+    return '$' + Math.round(a);
+  }
+  // Humans call you by your name; bots use your serial number.
+  const HUMANS = { glitch: 1, maya: 1, you: 1 };
+  function humanize(who, text) { return HUMANS[who] && S && S.name && S.name !== '4471' ? String(text).replace(/4471/g, S.name) : text; }
   const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
   // ------------------------------------------------------------------------------------------
@@ -95,21 +109,22 @@
   }
   const TIPS = {
     cash: () => `<h4>CASH</h4><p>Money you can spend right now.</p><p>Bills are paid every tick. If cash hits $0, <b>Repo-Tron</b> pays them for you and adds it to your debt at ${Math.round(S.debtApr * 100)}%/yr.</p>`,
-    netWorth: () => `<h4>NET WORTH ${fm(D.netWorth)}</h4><div class="kv"><span>Cash</span><span>${fm(D.cash)}</span><span>Businesses (what you paid)</span><span>${fm(D.bookValue)}</span><span>Investments</span><span>${fm(D.investValue)}</span><span>Repo-Tron debt</span><span class="bad">-${fm(D.debt)}</span><span>Bot-Bank loan</span><span class="bad">-${fm(D.loan)}</span></div><p>What you own minus what you owe. Yours started negative. Most do.</p>`,
-    passive: () => `<h4>PASSIVE INCOME ${fps(D.passivePerSec)}</h4><div class="kv"><span>Businesses (after ${Math.round(D.taxBiz * 100)}% tax)</span><span class="good">${fps(D.bizNetPerSec)}</span><span>Dividends (after ${Math.round(D.taxDiv * 100)}% tax)</span><span class="good">${fps(D.dividendPerSec)}</span><span>Per month</span><span>${fm(D.passiveMonthly)}</span></div><p>Money that arrives whether you click or not. <b>Clicks don't count.</b> This is the number that gets you out.</p>`,
-    expenses: () => `<h4>EXPENSES ${fm(D.expensesMonthly)}/mo</h4><div class="kv">${expenseLines().filter((l) => l[1] > 0.005).map((l) => `<span>${esc(l[0])}</span><span>${fm(l[1])}</span>`).join('')}<span class="total">Total per month</span><span class="total bad">${fm(D.expensesMonthly)}</span></div><p>One game month = ${C.SEC_PER_MONTH} seconds. Prices rise ${(S.mods.inflation * 100).toFixed(1)}% a year.</p>`,
+    netWorth: () => `<h4>NET WORTH ${fm(D.netWorth)}</h4><div class="kv"><span>Cash</span><span>${fm(D.cash)}</span><span>Businesses (what you paid)</span><span>${fm(D.bookValue)}</span><span>Investments</span><span>${fm(D.investValue)}</span><span>Repo-Tron debt</span><span class="bad">${fm(-D.debt)}</span><span>Bot-Bank loan</span><span class="bad">${fm(-D.loan)}</span></div><p>What you own minus what you owe. Yours started negative. Most do.</p>`,
+    passive: () => `<h4>PASSIVE INCOME ${pm(D.passiveMonthly)}</h4><div class="kv"><span>Businesses (after ${Math.round(D.taxBizBase * 100)}% tax)</span><span class="good">${pm(D.bizNetBasePerSec * C.SEC_PER_MONTH)}</span><span>Dividends (after tax)</span><span class="good">${pm(D.divNetBasePerSec * C.SEC_PER_MONTH)}</span><span>Right now, with boosts</span><span>${pm(D.passiveMonthlyNow)}</span></div><p>Money that arrives whether you click or not. <b>Clicks don't count.</b> This is the number that gets you out.</p><p>1 game month = ${C.SEC_PER_MONTH} seconds. Boosts (Bot Strike, FRENZY) pay now but don't count toward freedom.</p>`,
+    expenses: () => `<h4>EXPENSES ${fm(D.expensesMonthly)}/mo</h4><div class="kv">${expenseLines().filter((l) => l[1] > 0.005).map((l) => `<span>${esc(l[0])}</span><span>${fm(l[1])}</span>`).join('')}<span class="total">Total per month</span><span class="total bad">${fm(D.expensesMonthly)}</span></div><p>One game month = ${C.SEC_PER_MONTH} seconds. Prices rise ${(S.mods.inflation * 100).toFixed(1)}% a year.</p>${S.overdraftDebt > 0.5 ? `<p class="bad">Unpaid bills (${fm(S.overdraftDebt)}) are repaid automatically from your next income.</p>` : ''}`,
     freedom: () => {
       const locked = S.chapter < 4;
       if (locked) return `<h4>FREEDOM</h4><p>Unlocks in chapter 4. It will compare what your assets pay you with what life costs.</p>`;
+      if (S.ending === 'escaped') return `<h4>ESCAPED</h4><p>You paid the toll. Nothing here counts your hours any more.</p>`;
       const audit = S.chapter >= C.RAT_RACE_FROM_CHAPTER;
-      return `<h4>FREEDOM ${Engine.fmtPct(D.freedomRatio)}</h4><div class="kv"><span>Passive per month</span><span class="good">${fm(D.passiveMonthly)}</span><span>Expenses per month</span><span class="bad">${fm(D.expensesMonthly)}</span></div>
+      return `<h4>FREEDOM ${pct(D.freedomRatio)}</h4><div class="kv"><span>Passive per month</span><span class="good">${fm(D.passiveMonthly)}</span><span>Expenses per month</span><span class="bad">${fm(D.expensesMonthly)}</span></div>
         <p>The Cashflow rule: when <b>passive ≥ 125% of expenses</b> for <b>3 months in a row</b> with <b>no Repo-Tron debt</b>, you're <b>out of the rat race</b>.</p>
         ${S.flags.ratRaceExit ? '<p class="good">You are OUT of the rat race. Fast Track unlocked.</p>' : audit ? `<p>Good months so far: <b>${S.flags.ratRaceMonths}/${C.RAT_RACE_MONTHS}</b>${S.debt > 0 ? ' <span class="bad">(pay off Repo-Tron first!)</span>' : ''}</p>` : `<p>The Mainframe starts counting once you own real estate (<b>chapter 6: BRICKS</b>, buy a Pod Tower).</p>`}
-        <p>The gold line marks 125%. Promotions raise your rent and push the bar back.</p>`;
+        <p>The gold line marks the 125% goal. Promotions raise your rent and push the bar back.</p>${S.chapter >= 7 ? `<p>Now the bar shows your progress toward the <b>Exit Toll</b> (${fm(D.exitToll)}).</p>` : ''}`;
     },
     lifespan: () => `<h4>LIFE CLOCK</h4><div class="kv"><span>Age</span><span>${D.age.toFixed(1)}</span><span>Lifespan</span><span>${D.lifespan.toFixed(1)}</span><span>Years left</span><span class="${D.yearsLeft < 10 ? 'bad' : ''}">${D.yearsLeft.toFixed(1)}</span><span>Health</span><span class="${D.critical ? 'bad' : ''}">${Math.round(D.health)}/100 (${D.healthDriftPerYear >= 0 ? '+' : ''}${D.healthDriftPerYear}/yr)</span></div>
       <p>One year = ${C.SEC_PER_YEAR} seconds. When age reaches lifespan, the run ends. Die before you're out of the rat race and you <b class="bad">die a wage slave</b>.</p><p>Doc Module sells extra years in the LIFE tab. Health under ${C.CRITICAL_HEALTH} risks a sudden shutdown: visit the Medbay.</p>`,
-    heat: () => `<h4>HUSTLE METER</h4><p>Click fast to heat up: <b>HUSTLIN' ×1.5</b> at 25, <b>ON FIRE ×2</b> at 50, <b>OVERTIME ×3</b> at 75.</p><p>At 100 you <b class="bad">BURN OUT</b>: ${C.BURNOUT_LOCK_MS / 1000}s locked, −${C.BURNOUT_HEALTH} health. Ride OVERTIME with a steady rhythm (~1.5 clicks/s).</p><p class="lesson">machines don't burn out. buy machines.</p>`,
+    heat: () => `<h4>HUSTLE METER</h4><p>Click fast to heat up: <b>HUSTLIN' ×1.5</b> at 25, <b>ON FIRE ×2</b> at 50, <b>OVERTIME ×3</b> at 75.</p><p>At 100 you <b class="bad">BURN OUT</b>: ${C.BURNOUT_LOCK_MS / 1000}s locked, -${C.BURNOUT_HEALTH} health. Ride OVERTIME with a steady rhythm (~1.5 clicks/s).</p><p class="lesson">machines don't burn out. buy machines.</p>`,
     debt: () => `<h4>REPO-TRON DEBT ${fm(S.debt)}</h4><p>Bad debt at <b>${Math.round(S.debtApr * 100)}%/yr</b>. Interest is charged every month as an expense, and unpaid bills add to it.</p><p>You <b>must</b> pay it to zero to get out of the rat race.</p><p class="lesson">debt isn't a number. it's a rate.</p>`,
   };
   function tipFor(key) {
@@ -119,8 +134,9 @@
     if (kind === 'biz') {
       const B = Data.byId['business:' + id]; const b = D.businesses.find((x) => x.id === id);
       const each = b.owned > 0 ? b.netPerSec / b.owned : B.baseIncome * D.global * (1 - D.taxBiz);
-      return `<h4>${esc(B.name)}</h4><p>${esc(B.blurb)}</p><div class="kv"><span>Owned</span><span>${b.owned}</span><span>Each earns</span><span class="good">+${fps(each)}</span><span>Total</span><span class="good">+${fps(b.netPerSec)}</span><span>Milestone</span><span>×${b.milestoneMult}${b.nextMilestone ? ' (next at ' + b.nextMilestone + ')' : ''}</span><span>Upgrades</span><span>${b.level}/3</span></div>
-        <p>Next costs <b>${fm(b.cost)}</b> = ${fm(B.baseCost)} × ${B.costMult}^${b.owned}${S.mods.bizDiscount ? ' − Negotiator' : ''}</p><p>Pays for itself in <b>${b.payback < 1e9 ? Engine.fmtTime(b.payback) : '—'}</b></p><p class="lesson">${esc(B.lesson)}</p>${futureMe(b.cost)}`;
+      const disc = (S.flags.nextBizDiscount ? ' × ' + Math.round(S.flags.nextBizDiscount * 100) + '% (page 4 coupon)' : '') + (S.mods.bizDiscount ? ' - ' + Math.round(S.mods.bizDiscount * 100) + '% Negotiator' : '');
+      return `<h4>${esc(B.name)}</h4><p>${esc(B.blurb)}</p><div class="kv"><span>Owned</span><span>${b.owned}</span><span>Each earns</span><span class="good">+${pm(each * C.SEC_PER_MONTH)}</span><span>Total</span><span class="good">+${pm(b.netPerSec * C.SEC_PER_MONTH)}</span><span>Milestone</span><span>×${b.milestoneMult}${b.nextMilestone ? ' (next at ' + b.nextMilestone + ')' : ''}</span><span>Upgrades</span><span>${b.level}/3</span></div>
+        <p>Next costs <b>${fm(b.cost)}</b> = ${fm(B.baseCost)} × ${B.costMult}^${b.owned}${disc}</p><p>Pays for itself in <b>${b.payback < 1e9 ? Engine.fmtTime(b.payback) : '-'}</b></p><p class="lesson">${esc(B.lesson)}</p>${futureMe(b.cost)}`;
     }
     if (kind === 'bizupg') {
       const U = Data.byId['bizUpgrade:' + id]; const B = Data.byId['business:' + U.bizId];
@@ -128,7 +144,7 @@
     }
     if (kind === 'inv') {
       const I = Data.byId['investment:' + id]; const v = D.investments.find((x) => x.id === id);
-      return `<h4>${esc(I.ticker)} · ${esc(I.name)}</h4><p>${esc(I.blurb)}</p><div class="kv"><span>Avg return</span><span>${Math.round(I.mu * 100)}%/yr</span><span>Swings (volatility)</span><span>${Math.round(I.sigma * 100)}%/yr</span><span>Dividend yield</span><span>${(I.yield * 100).toFixed(1)}%/yr</span><span>Crash drop</span><span>${I.immuneToCrash ? 'none' : '−' + Math.round(I.crash * 100) + '%'}</span></div>${v.units > 0 ? `<p>You own <b>${Engine.fmt(v.units)}</b> units worth <b>${fm(v.value)}</b> (paid ${fm(v.basis)}).</p>` : ''}<p class="lesson">${esc(I.lesson)}</p>`;
+      return `<h4>${esc(I.ticker)} · ${esc(I.name)}</h4><p>${esc(I.blurb)}</p><div class="kv"><span>Avg return</span><span>${Math.round(I.mu * 100)}%/yr</span><span>Swings (volatility)</span><span>${Math.round(I.sigma * 100)}%/yr</span><span>Dividend yield</span><span>${(I.yield * 100).toFixed(1)}%/yr</span><span>Crash drop</span><span>${I.immuneToCrash ? 'none' : '-' + Math.round(I.crash * 100) + '%'}</span></div>${v.units > 0 ? `<p>You own <b>${Engine.fmt(v.units)}</b> units worth <b>${fm(v.value)}</b> (paid ${fm(v.basis)}).</p>` : ''}<p class="lesson">${esc(I.lesson)}</p>`;
     }
     if (kind === 'upg') {
       const U = Data.byId['upgrade:' + id];
@@ -144,7 +160,7 @@
     }
     if (kind === 'pu') {
       const P = Data.byId['powerup:' + id]; const p = D.activePowerups.find((x) => x.id === id);
-      return `<h4>${esc(P.name)}</h4><p>${esc(P.desc)}</p><p>${esc(P.blurb)}</p><div class="kv"><span>Cost now</span><span>${fm(p.cost)}</span><span>Lasts</span><span>${P.durationS}s</span><span>Cooldown</span><span>${Engine.fmtTime(P.cooldownS)}</span>${P.lifeCost ? `<span>Life cost</span><span class="bad">−${P.lifeCost} yr</span>` : ''}</div>`;
+      return `<h4>${esc(P.name)}</h4><p>${esc(P.desc)}</p><p>${esc(P.blurb)}</p><div class="kv"><span>Cost now</span><span>${fm(p.cost)}</span><span>Lasts</span><span>${P.durationS}s</span><span>Cooldown</span><span>${Engine.fmtTime(P.cooldownS)}</span>${P.lifeCost ? `<span>Life cost</span><span class="bad">-${P.lifeCost} yr</span>` : ''}</div>`;
     }
     if (kind === 'ach') {
       const A = Data.byId['achievement:' + id]; const got = S.achievements[id];
@@ -153,7 +169,7 @@
     }
     if (kind === 'job') {
       const J = Data.byId['job:' + id]; const H = Data.byId['housing:' + J.housing];
-      return `<h4>${esc(J.name)}</h4><p>${esc(J.blurb)}</p><div class="kv"><span>Pay per shift</span><span>${fm(J.gross)} → ${fm(J.gross * (1 - C.TAX_JOB))} after tax</span><span>Certificate</span><span>${fm(J.certCost)}</span><span>Mandated housing</span><span class="bad">${esc(H.name)} ${fm(H.rent)}/mo</span></div>`;
+      return `<h4>${esc(J.name)}</h4><p>${esc(J.blurb)}</p><div class="kv"><span>Pay per shift</span><span>${fm(J.gross)} > ${fm(J.gross * (1 - C.TAX_JOB))} after tax</span><span>Certificate</span><span>${fm(J.certCost)}</span><span>Mandated housing</span><span class="bad">${esc(H.name)} ${fm(H.rent)}/mo</span></div>`;
     }
     if (kind === 'housing') {
       const H = Data.byId['housing:' + id];
@@ -163,6 +179,7 @@
   }
   function showTooltip(target, x, y) {
     const key = target.getAttribute('data-tip');
+    ui.tipKey = key;
     const html = tipFor(key);
     const t = $('tooltip');
     if (!html) { t.hidden = true; return; }
@@ -175,7 +192,7 @@
     t.style.left = Math.max(8, left) + 'px'; t.style.top = top + 'px';
     ui.tipTarget = target;
   }
-  function hideTooltip() { $('tooltip').hidden = true; ui.tipTarget = null; }
+  function hideTooltip() { $('tooltip').hidden = true; ui.tipTarget = null; ui.tipKey = null; }
 
   function showBubble(anchor, key) {
     const b = $('bubble');
@@ -193,6 +210,8 @@
     b.style.top = Math.max(8, top) + 'px';
     Engine.markSeen(S, 'tip_' + key);
     anchor.classList && anchor.classList.add('seen');
+    clearTimeout(ui.bubbleTimer);
+    ui.bubbleTimer = setTimeout(() => { b.hidden = true; }, 12000);
     audio('lesson');
   }
   function q(key) { return el('button', { class: 'qchip' + (S && S.flags.seen['tip_' + key] ? ' seen' : ''), 'data-q': key, 'aria-label': 'Explain', text: '?' }); }
@@ -210,7 +229,7 @@
     const t = el('div', { class: 'toast ' + (kind || 'info') }, [iconId ? img(iconId, '', 2) : null, el('span', { text: text })]);
     box.appendChild(t);
     const kids = box.querySelectorAll('.toast:not(.out)');
-    if (kids.length > C.TOAST_MAX + 1) dismiss(kids[0]);
+    if (kids.length > C.TOAST_MAX) dismiss(kids[0]);
     setTimeout(() => dismiss(t), kind === 'whatif' ? 7000 : C.TOAST_MS);
   }
   function dismiss(t) { if (!t || t.classList.contains('out')) return; t.classList.add('out'); setTimeout(() => t.remove(), 320); }
@@ -220,11 +239,14 @@
   // ------------------------------------------------------------------------------------------
   function say(who, text, ttl) {
     if (!text) return;
-    if (ui.dialogueQ.length > 2) ui.dialogueQ.shift();
-    ui.dialogueQ.push({ who, text, ttl: ttl || 4000, blocking: false });
+    // Trim only ambient lines: dropping a scene's last blocking line would leave the game paused forever.
+    let ambient = 0;
+    for (const x of ui.dialogueQ) if (!x.blocking) ambient++;
+    if (ambient >= 2) { const i = ui.dialogueQ.findIndex((x) => !x.blocking); ui.dialogueQ.splice(i, 1); }
+    ui.dialogueQ.push({ who, text: humanize(who, text), ttl: ttl || 4000, blocking: false });
   }
   function playScene(lines, onDone) {
-    const items = lines.map((l) => ({ who: l.who, text: Engine.subst(l.text, { name: S.name }), blocking: true }));
+    const items = lines.map((l) => ({ who: l.who, text: humanize(l.who, Engine.subst(l.text, { name: S.name })), blocking: true }));
     items[items.length - 1].onDone = onDone;
     ui.dialogueQ = items.concat(ui.dialogueQ.filter((x) => x.blocking));
     ui.dialogueCur = null;
@@ -280,16 +302,20 @@
       const ch = Data.CHAPTERS[n - 1];
       const b = $('chapter-banner');
       $('cb-kicker').textContent = 'CHAPTER ' + n;
-      $('cb-title').textContent = ch.title;
-      $('cb-unlocks').innerHTML = n > 1 ? ch.unlocks.map((u) => '+ ' + esc(u.toUpperCase())).join('<br>') : 'EXPIRY IN 44 YEARS · DEBT: $2,000';
+      $('cb-title').textContent = humanize('you', ch.title);
+      $('cb-unlocks').innerHTML = n > 1 ? ch.unlocks.map((u) => '+ ' + esc(u.toUpperCase())).join('<br>')
+        : 'EXPIRY IN ' + Math.round(S.lifespan - S.age) + ' YEARS · ' + (S.debt > 0 ? 'DEBT: ' + fm(S.debt) : 'NO DEBT');
       b.classList.remove('out'); b.hidden = false;
+      $('bubble').hidden = true;
       audio('chapter');
-      const hold = ui.reduceMotion ? 1600 : 2600;
+      const hold = ui.reduceMotion ? 1200 : 2000;
+      const big = n === 1 || n === 4 || n === 7 || n === 8;
       setTimeout(() => {
         b.classList.add('out');
         setTimeout(() => {
           b.hidden = true;
-          playScene(ch.scene, () => { done(); });
+          if (big) playScene(ch.scene, () => { done(); });
+          else { ch.scene.forEach((l) => say(l.who, Engine.subst(l.text, { name: S.name }), 3200)); done(); }
         }, 450);
       }, hold);
     });
@@ -299,6 +325,8 @@
   // modals
   // ------------------------------------------------------------------------------------------
   function openModal(build, opts) {
+    // An offline or ending card owns the screen until it is dismissed (its blocker callback must run).
+    if (ui.modal && (ui.modal.kind === 'offline' || ui.modal.kind === 'ending') && !(opts && (opts.kind === 'offline' || opts.kind === 'ending'))) return false;
     const rootEl = $('modal-root'), m = $('modal');
     m.className = 'modal' + (opts && opts.cls ? ' ' + opts.cls : '');
     m.innerHTML = '';
@@ -306,13 +334,20 @@
     rootEl.hidden = false;
     ui.modal = opts || {};
     hideTooltip();
-    const first = m.querySelector('button:not(.close-x)');
-    if (first) setTimeout(() => first.focus({ preventScroll: true }), 30);
+    // Focus the card itself, not its first option: a player mashing Space to hustle must never
+    // pick "All-in on MoonCoin" by accident. Options need a real click (or Tab first).
+    m.setAttribute('tabindex', '-1');
+    setTimeout(() => m.focus({ preventScroll: true }), 0);
+    ui.modalAt = performance.now(); ui.modalKeyNav = false;
+    $('app').inert = true;
+    return true;
   }
   function closeModal() {
     const was = ui.modal;
     $('modal-root').hidden = true; $('modal').innerHTML = '';
     ui.modal = null;
+    $('app').inert = false;
+    if (document.activeElement && document.activeElement !== document.body) document.activeElement.blur();
     if (was && was.onClose) was.onClose();
   }
   function closeX() { return el('button', { class: 'icon-btn close-x', 'aria-label': 'Close', text: '✕', onclick: () => closeModal() }); }
@@ -329,7 +364,9 @@
       // extra context the event needs to teach properly
       if (pe.doodadId || pe.id === 'lambo') {
         const X = Data.byId['doodad:' + (pe.doodadId || 'lambo')];
-        m.appendChild(el('div', { class: 'infobox warn', html: `<b>${esc(X.name)}</b>: ${fm(X.price)} · upkeep <b class="bad">${fm(X.upkeep)}/mo FOREVER</b> · +${X.status} status.<br>Your passive income: ${fm(D.passiveMonthly)}/mo · expenses: ${fm(D.expensesMonthly)}/mo.${S.cash < X.price ? '<br><span class="bad">You can\'t afford it. "0% down" means Repo-Tron pays at ' + Math.round(S.debtApr * 100) + '%.</span>' : ''}` }));
+        const credit = Math.max(0, X.price - S.cash);
+        const expAfter = D.expensesMonthly + X.upkeep * S.inflationMult + credit * S.debtApr / 12;
+        m.appendChild(el('div', { class: 'infobox warn', html: `<b>${esc(X.name)}</b>: ${fm(X.price)} · upkeep <b class="bad">${fm(X.upkeep)}/mo FOREVER</b> · +${X.status} status.<br>FREEDOM now <b>${pct(D.freedomRatio)}</b> · if you buy it: <b class="bad">${pct(expAfter > 0 ? D.passiveMonthly / expAfter : 0)}</b>${credit > 0 ? '<br><span class="bad">You are ' + fm(credit) + ' short. "0% down" means Repo-Tron lends it at ' + Math.round(S.debtApr * 100) + '%.</span>' : ''}` }));
       }
       if (pe.id === 'promotion' && D.job && D.job.nextJob) {
         const J = Data.byId['job:' + D.job.nextJob]; const H = Data.byId['housing:' + J.housing]; const cur = Data.byId['housing:' + S.housing];
@@ -340,12 +377,26 @@
       pe.options.forEach((o) => {
         if (!o.visible) return;
         const op = ev.options[o.index];
-        const b = el('button', { class: 'btn' + (op.best ? '' : ''), onclick: () => answer(pe.id, o.index) }, [el('span', { text: o.label })]);
+        const cost = optionCost(op, pe, o);
+        const kids = [el('span', { text: o.label })];
+        if (cost > S.cash + 0.005) kids.push(el('span', { class: 'hint bad', text: 'ON CREDIT: ' + fm(cost - S.cash) + ' at ' + Math.round(S.debtApr * 100) + '%' }));
+        const b = el('button', { class: 'btn', onclick: () => answer(pe.id, o.index) }, kids);
         opts.appendChild(b);
       });
       m.appendChild(opts);
     }, { kind: 'event', id: pe.id });
     audio(pe.who === 'dan' ? 'coin' : 'lesson');
+  }
+  // What an option would take out of your pocket right now (so the card can warn about "0% down").
+  function optionCost(op, pe, view) {
+    const o = op.outcome || {};
+    let c = 0;
+    if (o.cash < 0) c -= o.cash;
+    if (o.lottery) c += o.lottery.tickets * o.lottery.price;
+    if (o.doodad) { const X = Data.byId['doodad:' + (o.doodad === 'offer' ? pe.doodadId : o.doodad)]; if (X) c += X.price; }
+    if (o.coverUpkeep && view && view.plan) c += view.plan.cost;
+    if (o.job === 'next' && D.job) c += D.job.certCost;
+    return c;
   }
   function answer(id, idx) {
     const r = Engine.answerEvent(S, id, idx, Date.now());
@@ -386,8 +437,8 @@
         m.appendChild(modalHead('glitch', 'WHILE YOU WERE AWAY'));
         const g = el('div', { class: 'stats-grid' });
         const rows = [['Time away', Engine.fmtTime(sum.elapsed) + (sum.elapsed > sum.seconds ? ' (counted ' + Engine.fmtTime(sum.seconds) + ')' : '')],
-          ['Your businesses earned', '+' + fm(sum.earned)], ['Rent, upkeep & interest', '−' + fm(sum.spent)], ['You aged', sum.yearsAged.toFixed(1) + ' years']];
-        rows.forEach((r) => { g.appendChild(el('span', { text: r[0] })); g.appendChild(el('span', { text: r[1], class: r[1][0] === '+' ? 'good' : r[1][0] === '−' ? 'bad' : '' })); });
+          ['Your businesses earned', '+' + fm(sum.earned)], ['Rent, upkeep & interest', '-' + fm(sum.spent)], ['You aged', sum.yearsAged.toFixed(1) + ' years']];
+        rows.forEach((r) => { g.appendChild(el('span', { text: r[0] })); g.appendChild(el('span', { text: r[1], class: r[1][0] === '+' ? 'good' : r[1][0] === '-' ? 'bad' : '' })); });
         m.appendChild(g);
         m.appendChild(el('div', { class: 'tip-line', text: Data.CHARACTERS.glitch.special.offline }));
         m.appendChild(el('button', { class: 'btn gold big wide', style: 'margin-top:12px', text: 'COLLECT', onclick: () => { closeModal(); burstAt($('machine'), 30, true); audio('chaching'); done(); } }));
@@ -409,7 +460,7 @@
       name: S.name, age: Math.floor(S.age), interestPaid: fm(S.stats.interestPaid), podtowers: Math.max(1, Math.round(S.stats.interestPaid / podCost * 4)),
       doodadMonthly: fm(doodadMonthly), doodadYears: years, doodadTotal: fm(doodadMonthly * 12 * years), freedomPct: Math.round(D.freedomRatio * 100),
       towersNeeded: Math.max(1, Math.ceil((D.expensesMonthly * 1.25 - D.passiveMonthly) / (Data.byId['business:podtower'].baseIncome * (1 - D.taxBiz) * C.SEC_PER_MONTH * D.global))),
-      toll: fm(D.exitToll), tollPct: Math.round(Math.min(1, S.cash / D.exitToll) * 100), doodadsBought: S.stats.doodadsBought, interestEarned: fm(S.stats.interestEarned),
+      toll: fm(D.exitToll), tollPct: Math.round(Math.min(1, S.cash / D.exitToll) * 100), doodadsBought: S.stats.doodadsBought + (S.stats.doodadsBought === 1 ? ' doodad' : ' doodads'), interestEarned: fm(S.stats.interestEarned),
       wisdom: S.pendingWisdom,
     };
     for (const t of E.tips) if (Engine.evalCond(S, t.when)) return Engine.subst(t.text, tokens);
@@ -426,7 +477,7 @@
             m.appendChild(el('h2', { text: E.title, style: 'text-align:center;color:' + (ending === 'free' ? 'var(--cyan)' : 'var(--red)') }));
             const t = el('div', { class: 'tombstone' });
             t.appendChild(el('div', { class: 'rip', text: 'R.I.P.' }));
-            t.appendChild(el('div', { class: 'epitaph', html: `HERE LIES ${esc(S.name)}<br>18 – ${Math.floor(S.age)}<br>"${esc(E.tombstone.epitaph)}"<br><span class="muted">${esc(E.tombstone.cause)}</span>` }));
+            t.appendChild(el('div', { class: 'epitaph', html: `HERE LIES ${esc(S.name)}<br>18 - ${Math.floor(S.age)}<br>"${esc(E.tombstone.epitaph)}"<br><span class="muted">${esc(E.tombstone.cause)}</span>` }));
             m.appendChild(t);
             m.appendChild(statsRows([
               ['Years lived', Math.floor(S.age - 18) + ''], ['Shifts worked', Engine.fmt(S.stats.shifts).replace('.00', '')], ['Clicks', S.stats.lifetimeClicks + ''],
@@ -484,7 +535,7 @@
       m.appendChild(toggle('SOUND EFFECTS', 'sound', () => ctx.onSettings()));
       m.appendChild(toggle('MUSIC', 'music', () => ctx.onSettings()));
       m.appendChild(toggle('REDUCE MOTION', 'reduceMotion', () => ctx.onSettings()));
-      m.appendChild(el('div', { class: 'settings-row' }, [el('span', { text: 'REPLAY TUTORIAL' }), el('button', { class: 'btn small', text: 'REPLAY', onclick: () => { S.flags.tutorialStep = 0; S.flags.tutorialDoneAll = false; Data.TUTORIAL.forEach((t) => { delete S.flags.seen[t.id]; }); ui.tutorialDone = false; closeModal(); } })]));
+      m.appendChild(el('div', { class: 'settings-row' }, [el('span', { text: 'HOW TO PLAY' }), el('button', { class: 'btn small', text: 'OPEN', onclick: () => { closeModal(); showHelp(); } })]));
       const box = el('textarea', { class: 'save-box', spellcheck: 'false' });
       m.appendChild(el('h3', { class: 'section', text: 'SAVE CODE (copy to back up, paste to restore)' }));
       m.appendChild(box);
@@ -514,8 +565,9 @@
         '<b>Escape</b>: once out of the rat race, save up for the Exit Toll and walk out. Die first and you die a wage slave.',
         '<b>Read Glitch\'s pages</b> (the envelope). Each teaches one money idea and gives a real bonus.',
       ].map((x) => '<li>' + x + '</li>').join('') }));
+      m.appendChild(el('p', { class: 'muted', text: 'TIME: 1 game month = ' + C.SEC_PER_MONTH + ' seconds, 1 year = ' + C.SEC_PER_YEAR + ' seconds. Income and bills are shown per month. The clock stops while you read.' }));
       m.appendChild(el('h3', { class: 'section', text: 'KEYS' }));
-      m.appendChild(el('p', { class: 'muted', text: 'SPACE / ENTER hustle · 1–6 tabs · M mute · ESC close' }));
+      m.appendChild(el('p', { class: 'muted', text: 'SPACE / ENTER hustle · 1-6 tabs · M mute · ESC close' }));
       m.appendChild(el('h3', { class: 'section', text: "GLITCH'S CODEX" }));
       const grid = el('div', { class: 'pages' });
       Object.keys(Data.TIPS).forEach((k) => grid.appendChild(el('button', { class: 'page-btn', text: k.toUpperCase(), onclick: (e) => showBubble(e.currentTarget, k) })));
@@ -589,6 +641,12 @@
     if (!S || S.ending === 'wageslave' || S.ending === 'free') return;
     if (e && e.preventDefault) e.preventDefault();
     if (ctx.onUserGesture) ctx.onUserGesture();
+    // The clock is frozen while a story scene or card is open, so the Machine is too.
+    if (ui.blocking || ui.modal) {
+      const now = performance.now();
+      if (now - (ui.storyHintAt || 0) > 900) { ui.storyHintAt = now; const r0 = $('machine').getBoundingClientRect(); floatText(r0.left + r0.width / 2, r0.top + 20, 'STORY FIRST', '#ffd166'); }
+      return;
+    }
     const m = $('machine');
     const r = Engine.click(S, Date.now());
     const rect = m.getBoundingClientRect();
@@ -604,7 +662,7 @@
     const n = r.crit ? 18 : 4 + r.tier * 3;
     burst(rect.left + rect.width / 2, rect.top + rect.height * 0.55, n, r.crit, r.tier >= 3);
     if (r.earned > 0) floatText(x, y - 10, '+' + fm(r.earned) + (r.crit ? '!!' : ''), r.crit ? '#ffd166' : '#4ade80', r.crit);
-    if (r.crit) { floatText(rect.left + rect.width / 2, rect.top, 'JACKPOT!', '#ffd166', true); shake(); ui.avatarReact = { name: 'arms_up', until: performance.now() + 700 }; }
+    if (r.crit) { floatText(rect.left + rect.width / 2, rect.top, 'JACKPOT!', '#ffd166', true); shake(); ui.avatarReact = { name: 'arms_up', until: performance.now() + 700 }; if (ctx.scene) ctx.scene.event('crit', {}); }
     if (r.tier >= 3 && !ui.reduceMotion && Math.random() < 0.3) shake();
     audio('click', { pitch: Math.min(12, Math.floor(S.heat / 8)), form: D ? D.machineForm : 'sign' });
     if (r.burnout) { audio('burnout'); shake(); ui.avatarReact = { name: 'sit', until: performance.now() + C.BURNOUT_LOCK_MS }; }
@@ -662,7 +720,11 @@
     // debt chip
     const dc = $('debt-chip');
     dc.hidden = S.debt <= 0.005;
-    if (!dc.hidden) { $('debt-amount').textContent = fm(S.debt); $('debt-apr').textContent = Math.round(S.debtApr * 100) + '%/yr'; }
+    if (!dc.hidden) {
+      $('debt-amount').textContent = fm(S.debt);
+      $('debt-apr').textContent = Math.round(S.debtApr * 100) + '%/yr' + (S.overdraftDebt > 0.5 ? ' · bills auto-repay' : '');
+      dc.classList.toggle('urgent', S.chapter >= 6 && !S.flags.ratRaceExit);
+    }
     // envelope
     const newPages = Data.LESSONS.filter((L) => S.lessons[L.id] === 'new');
     $('envelope').hidden = !newPages.length;
@@ -681,7 +743,7 @@
         b.classList.toggle('active', p.active);
         b.classList.toggle('poor', !p.active && p.ready && S.cash < p.cost);
         b.disabled = !p.ready && !p.active;
-        b.children[1].textContent = p.active ? Math.ceil(p.until - D.gameSeconds) + 's' : p.ready ? fm(p.cost) : Engine.fmtTime(p.cooldownUntil - D.gameSeconds);
+        b.children[1].textContent = p.active ? Math.ceil(p.until - D.gameSeconds) + 's' : p.ready ? short(p.cost) : Engine.fmtTime(p.cooldownUntil - D.gameSeconds);
         b.children[2].style.height = !p.ready && !p.active ? Math.max(0, Math.min(100, (p.cooldownUntil - D.gameSeconds) / P.cooldownS * 100)) + '%' : '0';
       });
     }
@@ -699,24 +761,30 @@
     cashEl.textContent = fm(ui.cashShown);
     cashEl.classList.toggle('flash', Math.abs(ui.cashShown - prevCash) > Math.max(5, Math.abs(prevCash) * 0.05));
     const nw = $('tb-nw'); nw.textContent = fm(ui.nwShown); nw.className = 'stat-value ' + (D.netWorth < 0 ? 'bad' : '');
-    $('tb-passive').textContent = '+' + fps(D.passivePerSec);
-    $('tb-exp').textContent = '-' + fps(D.expensesPerSec);
+    const pv = $('tb-passive');
+    if (D.boosted && D.passiveMonthlyNow > D.passiveMonthly * 1.01) { pv.textContent = '+' + fm(D.passiveMonthlyNow) + ' BOOST'; pv.classList.add('boost'); }
+    else { pv.textContent = '+' + fm(D.passiveMonthly); pv.classList.remove('boost'); }
+    $('tb-exp').textContent = fm(-D.expensesMonthly);
     const fw = $('tb-freedom-wrap');
     const locked = S.chapter < 4;
     fw.classList.toggle('locked', locked);
     fw.classList.toggle('free', !!S.flags.ratRaceExit);
-    fw.classList.toggle('toll', !!(S.flags.ratRaceExit && S.chapter >= 7));
+    fw.classList.toggle('toll', !!(S.flags.ratRaceExit && S.chapter >= 7) || S.ending === 'escaped');
+    fw.classList.toggle('precount', !locked && S.chapter < C.RAT_RACE_FROM_CHAPTER);
     if (locked) { $('tb-freedom-pct').textContent = 'LOCKED'; $('tb-freedom-fill').style.width = '0'; $('tb-freedom-title').textContent = 'FREEDOM'; }
+    else if (S.ending === 'escaped') { $('tb-freedom-title').textContent = 'ESCAPED'; $('tb-freedom-pct').textContent = 'YOU ARE FREE'; $('tb-freedom-fill').style.width = '100%'; }
     else {
-      const pct = Math.min(1, D.freedomRatio / (C.RAT_RACE_RATIO / 0.8)); // gold line at 80% of the bar = 125%
-      $('tb-freedom-fill').style.width = (pct * 100).toFixed(1) + '%';
-      const title = S.flags.ratRaceExit ? (S.chapter >= 7 ? 'EXIT TOLL' : 'FREE!') : S.chapter >= C.RAT_RACE_FROM_CHAPTER && S.flags.ratRaceMonths > 0 ? 'FREEDOM ' + S.flags.ratRaceMonths + '/3 MO' : 'FREEDOM';
+      const fill = Math.min(1, D.freedomRatio / (C.RAT_RACE_RATIO / 0.8)); // gold line at 80% of the bar = 125%
+      $('tb-freedom-fill').style.width = (fill * 100).toFixed(1) + '%';
+      const title = S.flags.ratRaceExit ? (S.chapter >= 7 ? 'EXIT TOLL' : 'FREE!')
+        : S.chapter < C.RAT_RACE_FROM_CHAPTER ? 'FREEDOM (COUNTS FROM CH.6)'
+        : S.flags.ratRaceMonths > 0 ? 'FREEDOM ' + S.flags.ratRaceMonths + '/3 MO' : 'FREEDOM · GOAL 125%';
       $('tb-freedom-title').textContent = title;
       if (S.flags.ratRaceExit && S.chapter >= 7) {
         const tp = Math.max(0, Math.min(1, S.cash / D.exitToll));
         $('tb-freedom-pct').textContent = (tp * 100).toFixed(tp < 0.1 ? 2 : 1) + '% of ' + fm(D.exitToll);
         $('tb-freedom-fill').style.width = (tp * 100).toFixed(2) + '%';
-      } else $('tb-freedom-pct').textContent = Engine.fmtPct(Math.min(D.freedomRatio, 99.99));
+      } else $('tb-freedom-pct').textContent = pct(D.freedomRatio);
     }
     // life clock
     const yl = D.yearsLeft;
@@ -768,6 +836,7 @@
     }
     if (ui.tab !== id) audio('tick');
     ui.tab = id; ui.tabSig = '';
+    $('bubble').hidden = true;
     const first = !S.flags.tabsOpened[id];
     Engine.openTab(S, id);
     const cap = $('tab-caption');
@@ -793,7 +862,7 @@
     }
   }
 
-  // Each tab: sig() → string that changes when the structure must be rebuilt; build(body) creates
+  // Each tab: sig() > string that changes when the structure must be rebuilt; build(body) creates
   // DOM and returns update(); update() refreshes numbers in place.
   let tabUpdate = null;
   function renderPanel(force) {
@@ -801,7 +870,7 @@
     if (!tabUnlocked(ui.tab)) {
       if (ui.tabSig !== 'empty') {
         ui.tabSig = 'empty'; body.innerHTML = ''; tabUpdate = null;
-        body.appendChild(el('div', { class: 'infobox', html: S.chapter < 2 ? '<b>Nothing to buy yet.</b><br>Click the cardboard sign on the left. Bots sometimes drop a coin.<br><br>You are 18, homeless and $2,000 in debt. Every click is a little less debt.' : 'Locked.' }));
+        body.appendChild(el('div', { class: 'infobox', html: S.chapter < 2 ? '<b>Nothing to buy yet.</b><br>Click the big cardboard sign (the Machine). Bots sometimes drop a coin.<br><br>You are ' + Math.floor(S.age) + ', homeless' + (S.debt > 0 ? ' and ' + fm(S.debt) + ' in debt. Every click is cash; paying Repo-Tron is a button. Interest never sleeps.' : '.') : 'Locked.' }));
       }
       return;
     }
@@ -837,7 +906,7 @@
       if (!S.job.id) {
         body.appendChild(el('div', { class: 'infobox', html: '<b>BOT-CORP IS HIRING.</b> A job trades your hours for dollars. It is the fastest way to get your first capital. Use it as a launchpad, not a destination.' }));
         const J = Data.JOBS[0];
-        const k = card({ name: J.name, icon: 'tab_work', tip: 'job:' + J.id, sub: `${fm(J.gross)} per shift, taxed 35% → <span class="good">${fm(J.gross * (1 - C.TAX_JOB))}</span><br>${esc(J.blurb)}` });
+        const k = card({ name: J.name, icon: 'tab_work', tip: 'job:' + J.id, sub: `${fm(J.gross)} per shift, taxed 35% > <span class="good">${fm(J.gross * (1 - C.TAX_JOB))}</span><br>${esc(J.blurb)}` });
         k.actions.appendChild(el('button', { class: 'btn green', 'data-action': 'take-job', text: 'TAKE THE JOB', onclick: () => { const r = Engine.takeJob(S, 'scrap'); if (r.ok) { audio('promotion'); toast('Hired! Your Machine is now a punch clock.', 'money', 'tab_work'); } } }));
         body.appendChild(k.root);
       } else {
@@ -872,14 +941,14 @@
           ]);
           body.appendChild(r);
         });
-        body.appendChild(el('p', { class: 'muted', style: 'font-size:7px;line-height:1.8', text: 'Each rung pays more, and Bot-Corp moves you into pricier housing. The rent eats the raise. That is the treadmill.' }));
+        body.appendChild(el('p', { class: 'muted', style: 'font-size:8px;line-height:1.8', text: 'Each rung pays more, and Bot-Corp moves you into pricier housing. The rent eats the raise. That is the treadmill.' }));
         refs.update = () => {
           const net = J.gross * (1 - D.taxJob);
-          k.sub.innerHTML = `${esc(J.blurb)}<br>GROSS ${fm(J.gross)} → TAX <span class="bad">−${fm(J.gross * D.taxJob)}</span> → NET <span class="good">${fm(net)}</span> a shift<br>Housing: ${esc(H.name)} <span class="bad">${fm(H.rent * S.inflationMult)}/mo</span>`;
+          k.sub.innerHTML = `${esc(J.blurb)}<br>PAY ${fm(J.gross)} - TAX <span class="bad">${fm(J.gross * D.taxJob)}</span> = <span class="good">${fm(net)}</span> a shift<br>Housing: ${esc(H.name)} <span class="bad">${pm(H.rent * S.inflationMult)}</span>`;
           if (next) {
-            const pct = Math.min(1, D.job.shifts / D.job.shiftsToPromote);
+            const done = Math.min(1, D.job.shifts / D.job.shiftsToPromote);
             const NH = Data.byId['housing:' + next.housing];
-            prog.innerHTML = `<b>NEXT: ${esc(next.name)}</b> · ${fm(next.gross)}/shift<br>Shifts ${Math.min(D.job.shifts, D.job.shiftsToPromote)}/${D.job.shiftsToPromote} · certificate ${fm(next.certCost)} · housing ${esc(NH.name)} (${fm(NH.rent)}/mo)<div class="bar gold" style="margin-top:6px"><i style="width:${(pct * 100).toFixed(1)}%"></i></div>`;
+            prog.innerHTML = `<b>NEXT: ${esc(next.name)}</b> · ${fm(next.gross)}/shift<br>Shifts ${Math.min(D.job.shifts, D.job.shiftsToPromote)}/${D.job.shiftsToPromote} · certificate ${fm(next.certCost)} · housing ${esc(NH.name)} (${pm(NH.rent)})<div class="bar gold" style="margin-top:6px"><i style="width:${(done * 100).toFixed(1)}%"></i></div>`;
             refs.promote.disabled = !D.job.canPromote;
           } else prog.innerHTML = '<b>TOP OF THE LADDER.</b> The ladder is still inside the building.';
         };
@@ -893,7 +962,7 @@
       m.appendChild(modalHead('supe', 'QUIT BOT-CORP?'));
       const covered = D.passiveMonthly >= D.expensesMonthly;
       m.appendChild(el('p', { html: covered ? 'Your passive income covers your expenses. The job is optional now. Clicks become <b>Hands-On Owner</b>: 1% of your business income per click.' : `<span class="bad">Your passive income (${fm(D.passiveMonthly)}/mo) does NOT cover your expenses (${fm(D.expensesMonthly)}/mo).</span> Without the job, the gap becomes debt.` }));
-      m.appendChild(el('p', { class: 'muted', text: 'Quitting also lifts the housing mandate: you can move somewhere cheaper in LIFE.' }));
+      m.appendChild(el('p', { class: 'muted', text: 'Quitting also lifts the housing mandate: you can move somewhere cheaper in LIFE. If you ever come back, Bot-Corp starts you at the bottom again.' }));
       const row = el('div', { class: 'row' });
       row.appendChild(el('button', { class: 'btn red', text: 'QUIT', onclick: () => { Engine.quitJob(S); closeModal(); audio('whoosh'); } }));
       row.appendChild(el('button', { class: 'btn', text: 'STAY', onclick: closeModal }));
@@ -903,7 +972,7 @@
 
   // ---------------- BIZ
   TABS.biz = {
-    sig: () => D.businesses.map((b) => (b.unlocked ? 1 : 0) + (b.fastTrackLocked ? 'f' : '') + b.level).join('') + ui.qty + (S.mods.autobuy ? 'a' : '') + (S.flags.tabsOpened.biz ? '' : 'n'),
+    sig: () => D.businesses.map((b) => (b.unlocked || S.flags.seen['biz_' + b.id] ? 1 : 0) + (b.fastTrackLocked ? 'f' : '') + b.level).join('') + ui.qty + (S.mods.autobuy ? 'a' : '') + (S.flags.tabsOpened.biz ? '' : 'n'),
     build(body) {
       const qrow = el('div', { class: 'qty-row' }, [el('span', { class: 'label', text: 'BUY' })]);
       ['1', '10', '100', 'max'].forEach((v) => qrow.appendChild(el('button', { class: 'btn' + (ui.qty === v ? ' on' : ''), text: v === 'max' ? 'MAX' : '×' + v, onclick: () => { ui.qty = v; renderPanel(true); } })));
@@ -914,7 +983,7 @@
       let shownMystery = false;
       D.businesses.forEach((b, i) => {
         const B = Data.BUSINESSES[i];
-        if (!b.unlocked) {
+        if (!b.unlocked && !S.flags.seen['biz_' + B.id]) {
           if (shownMystery) return;
           shownMystery = true;
           const k = card({ name: '??? ' + (B.fastTrack ? '(FAST TRACK)' : ''), icon: B.id, cls: 'mystery', sub: `Unlocks when you own a ${esc(Data.BUSINESSES[i - 1].name)} or have ${fm(b.cost * C.BIZ_VISIBLE_CASH_PCT)} cash.` });
@@ -959,11 +1028,11 @@
           c.price.textContent = fm(qq.total);
           c.k.badge.hidden = !b.owned; c.k.badge.textContent = '×' + b.owned;
           const each = b.owned > 0 ? b.netPerSec / b.owned : c.b.baseIncome * D.global * (1 - D.taxBiz);
-          c.k.sub.innerHTML = `<span class="good">+${fps(each)}</span> each${b.owned ? ' · total <span class="good">' + fps(b.netPerSec) + '</span>' : ''}<br>PAYBACK ${b.payback < 1e9 ? Engine.fmtTime(b.payback) : '—'}${b.boosted ? ' · <span class="gold">MILESTONE ×2!</span>' : ''}`;
+          c.k.sub.innerHTML = `<span class="good">+${pm(each * C.SEC_PER_MONTH)}</span> each${b.owned ? ' · total <span class="good">' + pm(b.netPerSec * C.SEC_PER_MONTH) + '</span>' : ''}<br>PAYBACK ${b.payback < 1e9 ? Engine.fmtTime(b.payback) : '-'}${b.boosted ? ' · <span class="gold">MILESTONE ×2!</span>' : ''}`;
           const nm = b.nextMilestone;
           const prevM = [0, 10, 25, 50, 100, 200].filter((x) => x <= b.owned).pop();
-          const pct = nm ? (b.owned - prevM) / (nm - prevM) : 1;
-          c.ms.firstChild.firstChild.style.width = (pct * 100).toFixed(1) + '%';
+          const msp = nm ? (b.owned - prevM) / (nm - prevM) : 1;
+          c.ms.firstChild.firstChild.style.width = (msp * 100).toFixed(1) + '%';
           c.ms.title = nm ? 'Next milestone at ' + nm + ' owned' : 'All milestones reached';
           for (const ub of c.up.children) if (ub._U) { ub.textContent = ub._U.name + ' ' + fm(ub._U.cost); ub.disabled = S.cash < ub._U.cost || b.owned < ub._U.requires; if (b.owned < ub._U.requires) ub.textContent = ub._U.name + ' (own ' + ub._U.requires + ')'; }
         });
@@ -988,7 +1057,7 @@
       body.appendChild(el('div', { class: 'infobox', html: '<b>PAPER ASSETS.</b> Dividends count as passive income. Price gains only count when you sell, and then they are taxed. Bonds never crash; everything else does.' }));
       if (D.dripUnlocked) {
         const drip = el('button', { class: 'btn small' + (S.drip ? ' on' : ''), text: 'DRIP ' + (S.drip ? 'ON' : 'OFF'), onclick: () => { Engine.setDrip(S, !S.drip); renderPanel(true); } });
-        body.appendChild(el('div', { class: 'row', style: 'margin-bottom:8px' }, [el('span', { class: 'muted', style: 'font-size:7px;flex:2', text: 'Reinvest dividends automatically' }), drip, q('drip')]));
+        body.appendChild(el('div', { class: 'row', style: 'margin-bottom:8px' }, [el('span', { class: 'muted', style: 'font-size:8px;flex:2', text: 'Reinvest dividends automatically' }), drip, q('drip')]));
       }
       const cards = [];
       D.investments.forEach((v) => {
@@ -1003,13 +1072,13 @@
         c.appendChild(el('div', { class: 'ihead' }, [el('div', { class: 'card-icon' }, [img(I.id)]), el('div', { class: 'card-main' }, [el('div', { class: 'card-name', text: I.ticker + ' · ' + I.name }), sub]), priceBox]));
         const spark = el('canvas', { class: 'spark', width: 340, height: 34 });
         c.appendChild(spark);
-        const buys = el('div', { class: 'ibuttons' });
+        const buys = el('div', { class: 'ibuttons' }, [el('span', { class: 'ilabel', text: 'BUY' })]);
         [['$100', () => 100], ['$1K', () => 1000], ['10%', () => S.cash * 0.1], ['50%', () => S.cash * 0.5], ['MAX', () => S.cash]].forEach(([label, amt]) => {
-          buys.appendChild(el('button', { class: 'btn green', text: 'BUY ' + label, onclick: () => { const r = Engine.investBuy(S, I.id, amt()); if (r.ok) audio('chaching'); else { toast(r.reason, 'warn'); audio('error'); } } }));
+          buys.appendChild(el('button', { class: 'btn green', text: label, onclick: () => { const r = Engine.investBuy(S, I.id, amt()); if (r.ok) audio('chaching'); else { toast(r.reason, 'warn'); audio('error'); } } }));
         });
-        const sells = el('div', { class: 'isell' });
+        const sells = el('div', { class: 'isell' }, [el('span', { class: 'ilabel', text: 'SELL' })]);
         [['25%', 0.25], ['50%', 0.5], ['ALL', 1]].forEach(([label, f]) => {
-          sells.appendChild(el('button', { class: 'btn red', text: 'SELL ' + label, onclick: () => { const r = Engine.investSell(S, I.id, f); if (r.ok) { audio('coin'); toast(`Sold for ${fm(r.proceeds)}${r.tax > 0 ? ' (gains tax −' + fm(r.tax) + ')' : ''}`, r.gain >= 0 ? 'money' : 'warn'); } else toast(r.reason, 'warn'); } }));
+          sells.appendChild(el('button', { class: 'btn red', text: label, onclick: () => { const r = Engine.investSell(S, I.id, f); if (r.ok) { audio('coin'); toast(`Sold for ${fm(r.proceeds)}${r.tax > 0 ? ' (gains tax -' + fm(r.tax) + ')' : ''}`, r.gain >= 0 ? 'money' : 'warn'); } else toast(r.reason, 'warn'); } }));
         });
         c.appendChild(buys); c.appendChild(sells);
         body.appendChild(c);
@@ -1037,13 +1106,20 @@
           const ch = first ? (last - first) / first : 0;
           c.priceBox.innerHTML = `${fm(v.dipPrice)}<small class="${ch >= 0 ? 'good' : 'bad'}">${ch >= 0 ? '▲' : '▼'} ${(Math.abs(ch) * 100).toFixed(1)}% 52w</small>`;
           c.sub.innerHTML = v.units > 0 ? `${Engine.fmt(v.units)} units · ${fm(v.value)} <span class="${v.gain >= 0 ? 'good' : 'bad'}">(${v.gain >= 0 ? '+' : ''}${fm(v.gain)})</span>${c.I.yield ? ' · <span class="good">+' + fm(v.yieldPerMonth) + '/mo</span>' : ''}` : `yield ${(c.I.yield * 100).toFixed(1)}%/yr · avg ${Math.round(c.I.mu * 100)}%/yr`;
-          for (const b of c.sells.children) b.disabled = v.units <= 0;
+          for (const b of c.sells.querySelectorAll('button')) b.disabled = v.units <= 0;
           drawSpark(c.spark, h, D.crashActive && !c.I.immuneToCrash);
         });
         if (loanRefs) loanRefs.innerHTML = `<span>Borrowed</span><span>${fm(S.loan)}</span><span>Can borrow</span><span>${fm(D.loanCapacity)}</span><span>Rate</span><span>${Math.round(S.loanApr * 100)}%/yr</span><span>Your businesses return</span><span class="${D.loanRoi > S.loanApr ? 'good' : 'bad'}">${(D.loanRoi * 100).toFixed(0)}%/yr on cost</span><span>Leverage</span><span class="${D.loanRoi > S.loanApr ? 'good' : 'bad'}">${D.loanRoi > S.loanApr ? 'PAYS (+' : 'COSTS ('}${((D.loanRoi - S.loanApr) * 100).toFixed(0)}%)</span>`;
       };
     },
   };
+  // Projected age at which steady passive income alone reaches the Exit Toll.
+  function tollAge() {
+    const perSec = D.bizNetBasePerSec + D.divNetBasePerSec - D.expensesPerSec;
+    if (S.cash >= D.exitToll) return D.age;
+    if (perSec <= 0) return Infinity;
+    return D.age + (D.exitToll - S.cash) / perSec / C.SEC_PER_YEAR;
+  }
   function drawSpark(cv, h, red) {
     const g = cv.getContext('2d');
     const w = cv.width, ht = cv.height;
@@ -1092,7 +1168,7 @@
       const hb = el('div', { class: 'card', style: 'display:block' });
       hb.appendChild(el('h3', { class: 'section' }, ['HEALTH & LIFESPAN', q('health')]));
       refs.health = el('div'); hb.appendChild(refs.health);
-      refs.medbay = el('button', { class: 'btn green wide', style: 'margin-top:8px', onclick: () => { const r = Engine.medbay(S); if (r.ok) { audio('achievement'); toast('Medbay: health restored to 70 (−' + fm(r.cost) + ')', 'money', 'heart'); } else toast(r.reason, 'warn'); } });
+      refs.medbay = el('button', { class: 'btn green wide', style: 'margin-top:8px', onclick: () => { const r = Engine.medbay(S); if (r.ok) { audio('achievement'); toast('Medbay: health restored to 70 (-' + fm(r.cost) + ')', 'money', 'heart'); } else toast(r.reason, 'warn'); } });
       hb.appendChild(refs.medbay);
       body.appendChild(hb);
       body.appendChild(el('h3', { class: 'section' }, ["DOC MODULE: BUY YEARS", q('lifespan')]));
@@ -1119,7 +1195,7 @@
         body.appendChild(k.root);
       });
       body.appendChild(el('h3', { class: 'section' }, ['DOODADS (LIABILITIES)', q('doodad')]));
-      body.appendChild(el('p', { class: 'muted', style: 'font-size:7px;line-height:1.8', text: 'Shiny, status-boosting, and billing you every month forever. Buy them with passive income, never with debt.' }));
+      body.appendChild(el('p', { class: 'muted', style: 'font-size:8px;line-height:1.8', text: 'Shiny, status-boosting, and billing you every month forever. Buy them with passive income, never with debt.' }));
       const dcards = [];
       Data.DOODADS.forEach((X) => {
         const owned = S.doodads[X.id];
@@ -1135,7 +1211,7 @@
       return () => {
         const d = D;
         refs.health.innerHTML = `<div class="kv"><span>Health</span><span class="${d.critical ? 'bad' : ''}">${Math.round(d.health)}/100 (${d.healthDriftPerYear >= 0 ? '+' : ''}${d.healthDriftPerYear}/yr)</span><span>Age</span><span>${d.age.toFixed(1)}</span><span>Lifespan</span><span>${d.lifespan.toFixed(1)} (base ${C.BASE_LIFESPAN}, max ${C.MAX_AGE})</span><span>Years left</span><span class="${d.yearsLeft < 10 ? 'bad' : 'good'}">${d.yearsLeft.toFixed(1)}</span></div><div class="bar ${d.critical ? 'red' : 'cyan'}" style="margin-top:6px"><i style="width:${Math.max(0, d.health)}%"></i></div>${d.critical ? '<p class="bad" style="font-size:8px">CRITICAL: each month there is a 4% chance of a sudden shutdown. Visit the Medbay.</p>' : ''}`;
-        refs.medbay.textContent = 'MEDBAY: HEALTH → 70 (' + fm(d.medbayCost) + ')';
+        refs.medbay.textContent = 'MEDBAY: HEALTH > 70 (' + fm(d.medbayCost) + ')';
         refs.medbay.disabled = d.health >= C.MEDBAY_HEALTH || S.cash < d.medbayCost;
         hcards.forEach((c) => { c.b.disabled = S.cash < c.H.cost; c.k.root.classList.toggle('affordable', S.cash >= c.H.cost && !c.H.scam); });
         dcards.forEach((c) => { c.b.disabled = S.cash < c.X.price; });
@@ -1187,18 +1263,43 @@
         S.hall.slice().reverse().forEach((h) => body.appendChild(el('div', { class: 'perk' + (h.ending === 'escaped' ? ' got' : '') }, [el('span', { text: 'Life ' + h.attempt + ': ' + (h.ending === 'escaped' ? 'ESCAPED' : h.ending === 'free' ? 'FREE, BUT GONE' : h.ending === 'wageslave' ? 'WAGE SLAVE' : h.ending.toUpperCase()) }), el('span', { text: 'age ' + h.age + ' · peak ' + fm(h.peakNetWorth) + ' · +' + h.wisdom + 'W' })])));
       }
       return () => {
-        refs.flow.innerHTML = `<span>Passive income</span><span class="good">+${fm(D.passiveMonthly)}</span><span>Expenses</span><span class="bad">−${fm(D.expensesMonthly)}</span><span class="total">Cash flow (without clicks)</span><span class="total ${D.passiveMonthly >= D.expensesMonthly ? 'good' : 'bad'}">${fm(D.passiveMonthly - D.expensesMonthly)}/mo</span><span>Freedom</span><span>${Engine.fmtPct(Math.min(D.freedomRatio, 99.99))}${S.flags.ratRaceExit ? ' · OUT OF THE RAT RACE' : ''}</span>`;
+        refs.flow.innerHTML = `<span>Passive income</span><span class="good">+${fm(D.passiveMonthly)}</span><span>Expenses</span><span class="bad">${fm(-D.expensesMonthly)}</span><span class="total">Cash flow (without clicks)</span><span class="total ${D.passiveMonthly >= D.expensesMonthly ? 'good' : 'bad'}">${fm(D.passiveMonthly - D.expensesMonthly)}/mo</span><span>Freedom</span><span>${pct(D.freedomRatio)}${S.flags.ratRaceExit ? ' · OUT OF THE RAT RACE' : ''}</span>`;
         const sp = D.incomeSplit;
         refs.split.children[0].style.width = (sp.clicks * 100) + '%'; refs.split.children[1].style.width = (sp.business * 100) + '%'; refs.split.children[2].style.width = (sp.dividends * 100) + '%';
-        refs.bs.innerHTML = `<span>Cash</span><span>${fm(D.cash)}</span><span>Businesses (cost)</span><span>${fm(D.bookValue)}</span><span>Investments</span><span>${fm(D.investValue)}</span><span>Repo-Tron debt</span><span class="bad">−${fm(D.debt)}</span><span>Bot-Bank loan</span><span class="bad">−${fm(D.loan)}</span><span class="total">Net worth</span><span class="total ${D.netWorth >= 0 ? 'good' : 'bad'}">${fm(D.netWorth)}</span>`;
+        refs.bs.innerHTML = `<span>Cash</span><span>${fm(D.cash)}</span><span>Businesses (cost)</span><span>${fm(D.bookValue)}</span><span>Investments</span><span>${fm(D.investValue)}</span><span>Repo-Tron debt</span><span class="bad">${fm(-D.debt)}</span><span>Bot-Bank loan</span><span class="bad">${fm(-D.loan)}</span><span class="total">Net worth</span><span class="total ${D.netWorth >= 0 ? 'good' : 'bad'}">${fm(D.netWorth)}</span>`;
         if (refs.toll) {
           const tp = Math.max(0, Math.min(1, S.cash / D.exitToll));
-          refs.toll.innerHTML = `<div class="kv"><span>Toll</span><span>${fm(D.exitToll)}</span><span>Cash</span><span>${fm(S.cash)} (${(tp * 100).toFixed(2)}%)</span><span>Time to toll at this rate</span><span>${D.passivePerSec > 0 ? Engine.fmtTime(Math.max(0, D.exitToll - S.cash) / D.passivePerSec) : '—'}</span></div><div class="bar gold" style="margin-top:6px"><i style="width:${(tp * 100).toFixed(2)}%"></i></div>${!D.outOfRatRaceNow ? '<p class="bad" style="font-size:7px">Passive income must cover expenses (and no bad debt) to pay the toll.</p>' : ''}`;
+          refs.toll.innerHTML = `<div class="kv"><span>Toll</span><span>${fm(D.exitToll)}</span><span>Cash</span><span>${fm(S.cash)} (${(tp * 100).toFixed(2)}%)</span><span>At this rate you pay it at</span><span class="${tollAge() > D.lifespan ? 'bad' : 'good'}">${tollAge() < 1e4 ? 'age ' + tollAge().toFixed(1) + ' (lifespan ' + D.lifespan.toFixed(0) + ')' : 'never, at this rate'}</span></div><div class="bar gold" style="margin-top:6px"><i style="width:${(tp * 100).toFixed(2)}%"></i></div>${!D.outOfRatRaceNow ? '<p class="bad" style="font-size:8px">Passive income must cover expenses (and no bad debt) to pay the toll.</p>' : ''}`;
           refs.escBtn.disabled = !D.canEscape;
         }
       };
     },
   };
+
+  // The NEXT line under your name: always the one concrete thing that moves the story forward.
+  function goalText(ch) {
+    if (S.ending === 'escaped') return 'YOU ESCAPED. KEEP BUILDING OR START NEW GAME+';
+    if (S.ending) return 'THE END. REBOOT FOR ANOTHER LIFE.';
+    const n = S.chapter, owned = Engine._internal.ownedTotal(S);
+    switch (n) {
+      case 1: return 'NEXT: Click the sign (' + Math.min(15, S.stats.lifetimeClicks) + '/15)';
+      case 2:
+        if (!S.job.id && !S.flags.everEmployed) return 'NEXT: Take the job (WORK tab)';
+        if (!owned && S.cash < 60) return 'NEXT: Save $60 for a battery stand (' + fm(S.cash) + ')';
+        return 'NEXT: Buy your first business (BIZ tab)';
+      case 3: return 'NEXT: Reach $5,000 net worth (' + fm(D.netWorth) + ')';
+      case 4: return 'NEXT: Reach $50,000 net worth (' + fm(D.netWorth) + ')';
+      case 5: return 'NEXT: Buy a Pod Tower (real estate) or reach $1M';
+      case 6:
+        if (S.debt > 0.005) return 'NEXT: Pay off Repo-Tron (' + fm(S.debt) + '). Bad debt blocks your exit.';
+        if (D.freedomRatio < C.RAT_RACE_RATIO) return 'NEXT: Passive income to 125% of expenses (now ' + pct(D.freedomRatio) + ')';
+        return 'NEXT: Hold it! Good months ' + S.flags.ratRaceMonths + '/3';
+      case 7: return 'NEXT: Save 10% of the Exit Toll (' + (Math.min(1, S.cash / (0.1 * D.exitToll)) * 100).toFixed(0) + '%)';
+      default:
+        if (!D.outOfRatRaceNow) return S.debt > 0.005 ? 'NEXT: Pay off Repo-Tron to use the gate' : 'NEXT: Passive must cover expenses to use the gate';
+        return 'NEXT: Pay the Exit Toll ' + fm(D.exitToll) + ' (' + (Math.min(1, S.cash / D.exitToll) * 100).toFixed(1) + '%)';
+    }
+  }
 
   // ------------------------------------------------------------------------------------------
   // tutorial arrow
@@ -1206,6 +1307,8 @@
   function renderTutorial(now) {
     const box = $('tutorial');
     document.querySelectorAll('.tut-target').forEach((e) => e.classList.remove('tut-target'));
+    // Past chapter 3 the player knows the ropes; the envelope and '?' chips carry the rest.
+    if (!S.flags.tutorialDoneAll && S.chapter >= 4) S.flags.tutorialDoneAll = true;
     if (ui.tutorialDone || S.flags.tutorialDoneAll || ui.blocking || ui.modal || S.ending) { box.hidden = true; return; }
     let step = null;
     for (const T of Data.TUTORIAL) {
@@ -1222,12 +1325,25 @@
     const r = target.getBoundingClientRect();
     if (r.width === 0) { box.hidden = true; return; }
     box.hidden = false;
-    $('tut-text').textContent = step.id === 'tut_punch' ? 'PUNCH IN' : step.text;
-    // Near the top of the screen the caption would cover the top bar: point up from below instead.
-    const below = r.top < 150;
-    box.classList.toggle('below', below);
-    box.style.left = Math.max(90, Math.min(innerWidth - 90, r.left + r.width / 2)) + 'px';
-    box.style.top = (below ? r.bottom + 6 : Math.max(24, r.top - 4)) + 'px';
+    $('tut-text').textContent = step.id === 'tut_years' ? 'YOU HAVE ' + Math.floor(D.yearsLeft) + " YEARS. THEY'RE TICKING." : step.text;
+    // Put the caption in the open city next to the panel the target lives in, so it never hides
+    // the debt chip, the NEXT goal or the card you need to read. Phones: above/below, clamped.
+    const you = $('col-you').getBoundingClientRect(), mk = $('col-market').getBoundingClientRect();
+    const phone = innerWidth <= 760;
+    let mode, x, y;
+    if (!phone && r.left >= you.left - 2 && r.right <= you.right + 2) { mode = 'right'; x = you.right + 12; y = r.top + r.height / 2; }
+    else if (!phone && r.left >= mk.left - 2) { mode = 'left'; x = mk.left - 12; y = r.top + r.height / 2; }
+    else if (r.top < 150) { mode = 'below'; x = r.left + r.width / 2; y = r.bottom + 6; }
+    else { mode = 'above'; x = r.left + r.width / 2; y = r.top - 4; }
+    box.className = 'm-' + mode;
+    $('tut-arrow').textContent = { right: '◀', left: '▶', below: '▲', above: '▼' }[mode];
+    const w = box.offsetWidth || 200;
+    if (mode === 'below' || mode === 'above') {
+      const maxX = phone ? innerWidth - w / 2 - 6 : Math.min(innerWidth - w / 2 - 6, mk.left - w / 2 - 8);
+      x = Math.max(w / 2 + 6, Math.min(maxX, x));
+    }
+    box.style.left = x + 'px';
+    box.style.top = y + 'px';
     target.classList.add('tut-target');
   }
 
@@ -1251,7 +1367,7 @@
   }
 
   // ------------------------------------------------------------------------------------------
-  // engine events → UI
+  // engine events > UI
   // ------------------------------------------------------------------------------------------
   function handle(ev) {
     switch (ev.type) {
@@ -1314,9 +1430,9 @@
       $('id-name').textContent = S.name;
       const st = $('id-status'); st.textContent = 'STATUS: ' + ch.statusLabel; st.classList.toggle('redacted', S.chapter >= 7);
       $('id-chapter').textContent = 'CH.' + S.chapter + ' ' + ch.title;
-      $('id-goal').textContent = S.ending === 'escaped' ? 'YOU ESCAPED. KEEP BUILDING OR START NEW GAME+' : 'NEXT: ' + ch.goal;
-      if (ui.tipTarget && document.body.contains(ui.tipTarget) && !$('tooltip').hidden) {
-        const t = $('tooltip'); const html = tipFor(ui.tipTarget.getAttribute('data-tip')); if (html) t.innerHTML = html;
+      $('id-goal').textContent = goalText(ch);
+      if (ui.tipKey && !$('tooltip').hidden) {
+        const t = $('tooltip'); const html = tipFor(ui.tipKey); if (html) t.innerHTML = html;
       }
     }
     renderTutorial(now);
@@ -1348,7 +1464,18 @@
     $('avatar-frame').addEventListener('click', () => { ui.avatarReact = { name: 'jump', until: performance.now() + 500 }; const lines = Data.CHARACTERS.you.lines; say('you', lines[Math.floor(Math.random() * lines.length)], 2500); });
     $('btn-settings').addEventListener('click', showSettings);
     $('btn-help').addEventListener('click', showHelp);
-    $('btn-sound').addEventListener('click', () => { S.settings.sound = !S.settings.sound; S.settings.music = S.settings.sound; ctx.onSettings(); });
+    $('btn-sound').addEventListener('click', () => { S.settings.sound = !S.settings.sound; ctx.onSettings(); });
+    // After a mouse click, drop focus from page buttons so Space goes back to hustling (keyboard users keep focus).
+    document.addEventListener('click', (e) => {
+      if (e.detail > 0 && !ui.modal) { const b = e.target.closest && e.target.closest('button'); if (b && b.id !== 'machine') b.blur(); }
+    });
+    // Phone quick-nav
+    document.querySelectorAll('[data-jump]').forEach((b) => b.addEventListener('click', () => {
+      const where = b.getAttribute('data-jump');
+      if (where === 'ledger' && tabUnlocked('ledger')) setTab('ledger');
+      const target = where === 'hustle' ? $('col-you') : $('col-market');
+      target.scrollIntoView({ behavior: ui.reduceMotion ? 'auto' : 'smooth', block: 'start' });
+    }));
     $('btn-escape').addEventListener('click', () => ctx.onEscape());
     $('glitch-btn').addEventListener('click', (e) => { const r = Engine.collectGlitch(S, Date.now()); if (r.kind) burst(e.clientX, e.clientY, 24, true); });
     $('debt-chip').addEventListener('click', (e) => {
@@ -1379,11 +1506,21 @@
     addEventListener('keydown', (e) => {
       if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA')) { if (e.key === 'Enter' && ui.modal && ui.modal.kind === 'rename') { const b = $('modal').querySelector('.btn.gold'); b && b.click(); } return; }
       if (e.key === 'Escape') { if (ui.modal && ['settings', 'help', 'lesson', 'rename', 'confirm'].includes(ui.modal.kind)) closeModal(); $('bubble').hidden = true; return; }
-      if (ui.dialogueCur && ui.dialogueCur.blocking && (e.key === ' ' || e.key === 'Enter')) { e.preventDefault(); clickDialogue(); return; }
-      if (ui.modal) return;
-      if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); if (!e.repeat) onMachine(null); return; }
+      const act = e.key === ' ' || e.key === 'Enter';
+      if (ui.modal) {
+        if (e.key === 'Tab') ui.modalKeyNav = true;
+        // Only a button the player deliberately tabbed to may be pressed, and not in the first 0.6 s.
+        const onCardButton = e.target && e.target.closest && e.target.closest('#modal button');
+        if (act && (!onCardButton || !ui.modalKeyNav || performance.now() - ui.modalAt < 600)) e.preventDefault();
+        return;
+      }
+      if (ui.dialogueCur && ui.dialogueCur.blocking && act) { e.preventDefault(); clickDialogue(); return; }
+      const t = e.target;
+      const free = !t || t === document.body || t === document.documentElement || t.id === 'machine';
+      if (act && free) { e.preventDefault(); if (!e.repeat) onMachine(null); return; }
+      if (act) return; // a focused button/link keeps its normal keyboard behaviour
       if (e.key >= '1' && e.key <= '6') { setTab(TAB_LIST[+e.key - 1].id); return; }
-      if (e.key === 'm' || e.key === 'M') { S.settings.sound = !S.settings.sound; S.settings.music = S.settings.sound; ctx.onSettings(); }
+      if (e.key === 'm' || e.key === 'M') { S.settings.sound = !S.settings.sound; ctx.onSettings(); }
     });
     ui.cashShown = S.cash; ui.nwShown = 0;
     return { render, handle, setState, intro, burst, toast, say, closeModal, isBusy: () => !!ui.modal || ui.blocking };

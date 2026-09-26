@@ -1,7 +1,7 @@
-/* data.js — every piece of ESCAPE BOTLANDIA game content as plain data (global `Data`). */
+/* data.js - every piece of ESCAPE BOTLANDIA game content as plain data (global `Data`). */
 /*
  * ============================================================================================
- *  DATA DSL — how engine.js / ui.js interpret the declarative objects in this file
+ *  DATA DSL - how engine.js / ui.js interpret the declarative objects in this file
  * ============================================================================================
  *
  *  Data is pure: no functions anywhere except the tiny byId builder at the bottom. Every number,
@@ -81,6 +81,8 @@
  *    { openTab: 'biz' }                      UI hint: open that tab after the modal closes
  *    { achievement: 'id' }                   grant achievement
  *    { lesson: 'L22' }                       queue that ledger page
+ *    { coverUpkeep: true }                   with doodad: first buy the cheapest bundle of one business whose
+ *                                            income covers the doodad's upkeep (Engine.coverPlan)
  *    { custom: 'name' }                      engine-implemented; names listed in CUSTOM_OUTCOMES
  *  Option fields: label, requires? (condition; hide the option when false), outcome,
  *  response {who,text}, failResponse? {who,text}, whatIf? { delayS, text } (a toast fired
@@ -182,7 +184,7 @@
     TICK_MS: 100,
     AUTOSAVE_MS: 10000,
 
-    // --- extras pulled from §2–§11 so no module hard-codes them ---
+    // --- extras pulled from §2-§11 so no module hard-codes them ---
     START_DEBT_LABEL: 'Vagrancy Fine + Processing Fee',
     MEDBAY_NET_WORTH_PCT: 0.02,   // Medbay cost = max(MEDBAY_MIN, 2% net worth) -> health 70
     MEDBAY_HEALTH: 70,
@@ -215,11 +217,12 @@
     WISDOM_INCOME_PER_POINT: 0.02,
     ACHIEVEMENT_INCOME_PER_POINT: 0.01,
     FULLY_BOOTED_BONUS: 0.10,
-    LESSON_GAP_S: 180,            // <= 1 new ledger page per 3 minutes
+    LESSON_GAP_S: 90,             // <= 1 new ledger page per 90 s (tuned down from 180 so pages arrive while relevant)
+    LESSON_GAP_TUTORIAL_S: 40,    // L01-L04 arrive at least 40 s apart
     LESSON_L01_DELAY_S: 10,
     DOODAD_RESALE: 0.3,           // 0.5 after L22
     DOODAD_PITCH_S: 8,
-    CRASH_MIN_S: 480,             // market crash every 8–15 min once you own any investment
+    CRASH_MIN_S: 480,             // market crash every 8-15 min once you own any investment
     CRASH_MAX_S: 900,
     DIP_WINDOW_S: 20,
     DIP_DISCOUNT: 0.3,            // B500 30% cheaper during BUY THE DIP
@@ -259,7 +262,7 @@
   ];
 
   // ---------------------------------------------------------------------------------------------
-  // 3.1 Jobs — "golden handcuffs". certCost is paid to TAKE this job; shiftsToNext are the shifts
+  // 3.1 Jobs - "golden handcuffs". certCost is paid to TAKE this job; shiftsToNext are the shifts
   // worked at this job before the next promotion is offered (null on the last rung).
   // ---------------------------------------------------------------------------------------------
   const JOBS = [
@@ -296,7 +299,7 @@
   ];
 
   // ---------------------------------------------------------------------------------------------
-  // 4. Businesses — 14 assets in 5 tiers. `anim` names the city sprite set (= id).
+  // 4. Businesses - 14 assets in 5 tiers. `anim` names the city sprite set (= id).
   // Each has 3 upgrades: ids '<id>_u1'..'_u3', cost = baseCost x 15 / 150 / 1500,
   // require 5 / 25 / 50 owned, each x1.5 income.
   // ---------------------------------------------------------------------------------------------
@@ -599,7 +602,7 @@
       ] },
     { id: 'offtreadmill', num: 7, title: 'OFF THE TREADMILL', machine: 'core', avatar: 'tycoon', statusLabel: '[REDACTED]', palette: 'heights',
       unlock: { flag: 'ratRaceExit' }, unlockText: 'flags.ratRaceExit',
-      unlocks: ['Fast Track tiers 8–14', 'Quit-Job nudge', 'Managers'],
+      unlocks: ['Fast Track tiers 8-14', 'Quit-Job nudge', 'Managers'],
       goal: 'Save 10% of the Exit Toll',
       scene: [
         { who: 'mainframe', text: 'ERROR. UNIT 4471 PASSIVE INCOME EXCEEDS EXPENSES.' },
@@ -623,7 +626,7 @@
   // Chapter-transition staging (§9.3), for scene.js / ui.js.
   const CHAPTER_FX = {
     wipe: 'diagonal scanline',
-    bannerTemplate: 'CHAPTER {num} — {title}',
+    bannerTemplate: 'CHAPTER {num} - {title}',
     fanfareNotes: 4,
     machineCutscene: ['old form shakes', 'sparks', 'blackout', 'new form drops in with a thud'],
     maxSceneLines: 5,
@@ -686,7 +689,7 @@
       special: {
         ratRaceExit: 'ERROR. UNIT 4471 PASSIVE INCOME EXCEEDS EXPENSES.',
         death: 'EXPIRY REACHED. STATUS: OPTIMALLY EMPLOYED.',
-        escape: 'UNIT 4471 NOT FOUND. NOT FOUND. NOT FOU—',
+        escape: 'UNIT 4471 NOT FOUND. NOT FOUND. NOT FOU-',
       } },
     glitch: { id: 'glitch', name: 'Glitch', role: 'mentor', color: '#39d4ff',
       voice: 'lowercase, dry, warm',
@@ -852,7 +855,7 @@
   };
 
   // ---------------------------------------------------------------------------------------------
-  // 10.1 Glitch's Ledger — 22 pages. `text`/`botlandia` verbatim (§14). `when` is the condition
+  // 10.1 Glitch's Ledger - 22 pages. `text`/`botlandia` verbatim (§14). `when` is the condition
   // Engine checks each tick (custom names listed in CUSTOM_CONDITIONS); `trigger` is for humans.
   // ---------------------------------------------------------------------------------------------
   const LESSONS = [
@@ -860,7 +863,7 @@
       text: "Debt isn't a number, it's a rate. Every month interest adds to what you owe, so the meter runs even while you sleep. Paying it down early saves every future payment on that piece.",
       botlandia: "Repo-Tron's counter ticks at 12% a year.",
       trigger: '10 s after first click', when: { custom: 'firstClickPlus10s' },
-      reward: { type: 'debtApr', value: 0.10 }, rewardText: 'Repo-Tron APR 12% → 10%' },
+      reward: { type: 'debtApr', value: 0.10 }, rewardText: 'Repo-Tron APR 12% to 10%' },
     { id: 'L02', title: 'Time for Money',
       text: "A job trades hours for dollars. It's the fastest way to get your first capital, but it stops paying the moment you stop showing up. Use it as a launchpad, not a destination.",
       botlandia: 'the punch clock only pays while you punch.',
@@ -880,7 +883,7 @@
       text: 'Most people spend, then invest what\'s left: usually nothing. Flip it. Move a slice of every paycheck into assets before you can spend it, and live on the rest. What you never see, you never miss.',
       botlandia: 'buy the machine before the paste.',
       trigger: 'chapter 4', when: { chapter: 4 },
-      reward: { type: 'bizMult', value: 1.2 }, rewardText: 'business income ×1.2' },
+      reward: { type: 'bizMult', value: 1.15 }, rewardText: 'business income ×1.15' },
     { id: 'L06', title: 'Lifestyle Inflation',
       text: 'When income rises, spending quietly rises to meet it. New phone, bigger pod, nicer paste. Your raise disappears and the treadmill speeds up. Raise your income, freeze your lifestyle, invest the gap.',
       botlandia: 'Dan is always waiting for payday.',
@@ -890,7 +893,7 @@
       text: 'Returns earn returns. Divide 72 by the yearly rate to estimate how long money takes to double: 8% doubles in about 9 years, 12% in about 6. Time in the market beats timing it, so start early, even small.',
       botlandia: '8% is a long-run illustration, not a promise.',
       trigger: 'INVEST tab first opened', when: { tabOpened: 'invest' },
-      reward: { type: 'bizMult', value: 1.2 }, rewardText: 'business income ×1.2' },
+      reward: { type: 'bizMult', value: 1.15 }, rewardText: 'business income ×1.15' },
     { id: 'L08', title: 'Index Funds',
       text: "An index fund buys a small slice of hundreds of companies at once for a tiny fee. You don't have to pick winners; you own the whole market's growth. Boring on purpose. Boring wins.",
       botlandia: 'B500 = a slice of every bot company.',
@@ -910,22 +913,22 @@
       text: 'Debt that buys an asset paying more than the interest is a tool. Debt that buys a depreciating toy is a trap. Ask one question before borrowing: will this loan pay for itself?',
       botlandia: 'Repo-Tron charges 12%. Bot-Bank charges 8%. Your Pod Tower returns more.',
       trigger: 'chapter 5 start', when: { chapter: 5 },
-      reward: { type: 'unlockLoan', apr: 0.07, bizMult: 1.2 }, rewardText: 'unlocks Bot-Bank; loan APR 8% → 7%; business income ×1.2' },
+      reward: { type: 'unlockLoan', apr: 0.07, bizMult: 1.15 }, rewardText: 'unlocks Bot-Bank; loan APR 8% to 7%; business income ×1.15' },
     { id: 'L12', title: 'Diversification',
       text: "Don't let one thing sink you. Spread across businesses, funds, property and cash so one bad year in one place doesn't end the game. Diversification is the closest thing to a free lunch in investing.",
       botlandia: "bonds don't crash. Everything else does.",
       trigger: 'own 3 asset classes or first crash', when: { any: [{ custom: 'threeAssetClasses' }, { custom: 'firstCrash' }] },
-      reward: { type: 'crashSofter', value: 0.8, bizMult: 1.2 }, rewardText: 'crashes 20% softer; business income ×1.2' },
+      reward: { type: 'crashSofter', value: 0.8, bizMult: 1.15 }, rewardText: 'crashes 20% softer; business income ×1.15' },
     { id: 'L13', title: 'Cash Flow vs Capital Gains',
       text: "Cash flow is money an asset pays you every month while you keep it. A capital gain is profit you only get when you sell, and it's usually taxed then. Cash flow pays rent; gains are a bet on someone paying more later.",
       botlandia: 'the Freedom meter only counts cash flow.',
       trigger: 'first investment worth more than its cost basis', when: { custom: 'investmentAboveBasis' },
-      reward: { type: 'gainTax', value: 0.10 }, rewardText: 'capital gains tax 15% → 10%' },
+      reward: { type: 'gainTax', value: 0.10 }, rewardText: 'capital gains tax 15% to 10%' },
     { id: 'L14', title: 'Taxes: Earned vs Passive',
       text: 'In many systems, wages are taxed hardest while long-held investments, qualified dividends and business cash flow are taxed lighter. Owners often keep more of a dollar than workers do.',
       botlandia: 'R.E.S. takes 35% of a shift, 21% of a business, 15% of a dividend.',
       trigger: 'passive $/s exceeds click $/s at 3 cps for the first time', when: { custom: 'passiveBeatsClicks' },
-      reward: { type: 'bizTax', value: 0.18, bizMult: 1.2 }, rewardText: 'business tax 21% → 18%; business income ×1.2' },
+      reward: { type: 'bizTax', value: 0.18, bizMult: 1.15 }, rewardText: 'business tax 21% to 18%; business income ×1.15' },
     { id: 'L15', title: 'Real Estate & Leverage',
       text: 'A rental is an asset if rent beats mortgage, maintenance and vacancy combined. With a small down payment you control the whole building, so the return on your own cash multiplies. Leverage magnifies gains and mistakes.',
       botlandia: 'tenants pay the bank; you keep the difference.',
@@ -940,7 +943,7 @@
       text: "Money sitting idle isn't safe; it's costing you whatever it could have earned. $10,000 in a jar for 10 years versus 8% in a fund is about $11,000 of growth you chose not to have.",
       botlandia: 'hover any price to see what it could become.',
       trigger: 'cash >= 20x cheapest affordable business, idle 60 s', when: { custom: 'idleCash20x' },
-      reward: { type: 'futureMe' }, rewardText: '"Future Me" tooltip (any price → value in 20 yrs at 8%)' },
+      reward: { type: 'futureMe' }, rewardText: '"Future Me" tooltip (any price to value in 20 yrs at 8%)' },
     { id: 'L18', title: 'Time Is the Scarcest Asset',
       text: "You can make more money. You cannot make more years. Health is the one investment that extends every other one, and wealth only matters if you're alive to use it.",
       botlandia: 'the rich live longer. Now you know why they hurry.',
@@ -950,26 +953,26 @@
       text: "If the business stops when you stop, you bought yourself a job. Hire, automate, write the process down. A system works while you sleep; that's the difference between self-employed and owner.",
       botlandia: "machines don't burn out.",
       trigger: 'Manager Bots or Clone bought', when: { any: [{ upgrade: 'managers' }, { upgrade: 'clone1' }] },
-      reward: { type: 'bizMult', value: 1.2 }, rewardText: 'business income ×1.2' },
+      reward: { type: 'bizMult', value: 1.15 }, rewardText: 'business income ×1.15' },
     { id: 'L20', title: 'The Freedom Number',
       text: "When your passive income covers your expenses, work becomes optional. That's the finish line of the Cashflow game and of this one. Add a margin for surprises, then walk out the gate.",
       botlandia: '125% for three months, and no bad debt.',
       trigger: 'freedom meter first >= 100%', when: { freedomRatio: 1.0 },
-      reward: { type: 'exitTollMult', value: 0.9 }, rewardText: 'Exit Toll −10%' },
+      reward: { type: 'exitTollMult', value: 0.9 }, rewardText: 'Exit Toll -10%' },
     { id: 'L21', title: 'Inflation',
       text: 'Prices rise a little every year, so a dollar buys less. Cash slowly shrinks. Assets that raise their prices or rents with inflation keep your purchasing power.',
       botlandia: 'Landlord Unit never forgets.',
       trigger: 'game year 10 (age 28)', when: { age: 28 },
-      reward: { type: 'inflation', value: 0.015 }, rewardText: 'expense inflation 3% → 1.5%' },
+      reward: { type: 'inflation', value: 0.015 }, rewardText: 'expense inflation 3% to 1.5%' },
     { id: 'L22', title: 'Delayed Gratification',
       text: "The Bot-Lambo now, or ten Bot-Lambos later? Every dollar invested early is worth many dollars later. The trick isn't willpower; it's remembering what the money becomes.",
       botlandia: 'the assets can buy the toy. Let them.',
       trigger: 'Bot-Lambo event answered', when: { custom: 'lamboAnswered' },
-      reward: { type: 'doodadResale', value: 0.5 }, rewardText: 'doodad resale 30% → 50%' },
+      reward: { type: 'doodadResale', value: 0.5 }, rewardText: 'doodad resale 30% to 50%' },
   ];
 
   // ---------------------------------------------------------------------------------------------
-  // 10.2 Choice events — "INCOMING TRANSMISSION". See the DSL block at the top for outcomes.
+  // 10.2 Choice events - "INCOMING TRANSMISSION". See the DSL block at the top for outcomes.
   // ---------------------------------------------------------------------------------------------
   const EVENTS = [
     { id: 'promotion', who: 'supe', title: 'PROMOTION AVAILABLE',
@@ -995,12 +998,12 @@
         { label: 'Decline', best: true, outcome: { doodadDeclined: true },
           response: { who: 'dan', text: 'No problem, friend! I will be back! I am ALWAYS back!' } },
         { label: 'Let the assets buy it', requires: { custom: 'assetsCanAffordOffer' },
-          outcome: { doodad: 'offer', achievement: 'assets_bought_toy' },
+          outcome: { doodad: 'offer', coverUpkeep: true, achievement: 'assets_bought_toy' },
           response: { who: 'glitch', text: 'the machines bought the toy. that\'s how you buy toys.' } },
       ] },
     { id: 'lambo', who: 'dan', title: 'BOT-LAMBO',
       text: "Friend! Bot-Lambo! 0% down! You've EARNED it!\nRed! Loud! Parks itself outside your pod!\nThe monthly? Friend. Look at the RED.",
-      when: { chapterMin: 4, once: true },
+      when: { chapterMin: 4, once: true, condition: { not: { doodad: 'lambo' } } },
       options: [
         { label: 'Buy the Bot-Lambo', outcome: { doodad: 'lambo', lesson: 'L22' },
           response: { who: 'dan', text: 'VROOM! Your neighbours hate you! Success!' },
@@ -1008,7 +1011,7 @@
         { label: 'Decline', best: true, outcome: { doodadDeclined: true, lesson: 'L22' },
           response: { who: 'glitch', text: 'ten lambos later beats one lambo now. nice.' } },
         { label: 'Let the assets buy it', requires: { custom: 'assetsCanAffordLambo' },
-          outcome: { doodad: 'lambo', achievement: 'assets_bought_toy', lesson: 'L22' },
+          outcome: { doodad: 'lambo', coverUpkeep: true, achievement: 'assets_bought_toy', lesson: 'L22' },
           response: { who: 'glitch', text: 'the tenants bought you a lambo. that\'s the trick.' } },
       ] },
     { id: 'consolidation', who: 'repo', title: 'DEBT CONSOLIDATION OFFER',
@@ -1065,9 +1068,9 @@
       ] },
     { id: 'crash_choice', who: 'glitch', title: 'MARKET CRASH',
       text: "everything's red. the bots are panicking.\nyou can sell, hold, or buy while it's cheap.\nthe bots don't know either. they just panic faster.",
-      when: { chapterMin: 5, repeatable: true, oncePerCrash: true, condition: { custom: 'inCrash' } },
+      when: { chapterMin: 5, repeatable: true, system: true, oncePerCrash: true, condition: { custom: 'inCrash' } },
       options: [
-        { label: 'Sell everything', outcome: { sellInvestments: true, achievement: 'paper_hands' },
+        { label: 'Sell everything', outcome: { sellInvestments: true }, // paper_hands comes from actually selling in a crash
           response: { who: 'glitch', text: "sold at the bottom. that's the one way to lose for sure." },
           whatIf: { delayS: 30, text: 'what if: you held. it recovered. {heldValue} would be yours.' } },
         { label: 'Hold', outcome: {},
@@ -1076,7 +1079,7 @@
           response: { who: 'glitch', text: 'everything is on sale and you bought. that\'s investing.' } },
       ] },
     { id: 'prince', who: 'mainframe', title: 'INCOMING TRANSMISSION',
-      text: 'GREETINGS. I AM PRINCE UNIT 0001 OF NIGERIA-7.\nMY FORTUNE OF $40,000,000 IS FROZEN.\nSEND $500 FOR THE UNFREEZING FEE. HURRY.',
+      text: 'GREETINGS. I AM PRINCE UNIT 0001 OF SECTOR-7.\nMY FORTUNE OF $40,000,000 IS FROZEN.\nSEND $500 FOR THE UNFREEZING FEE. HURRY.',
       when: { chapterMin: 3, once: true },
       options: [
         { label: 'Send $500', outcome: { cash: -500 },
@@ -1133,7 +1136,7 @@
       ] },
     { id: 'partner', who: 'mainframe', title: 'ACQUISITION OFFER',
       text: 'BOT-CORP FOODS WISHES TO ACQUIRE 50% OF YOUR TRUCKS.\nOFFER: 12 MONTHS OF THEIR INCOME. IN CASH. NOW.\nRESPOND. THE OFFER EXPIRES. EVERYTHING EXPIRES.',
-      when: { chapterMin: 5, chapterMax: 7, once: true, condition: { owned: 'truck', gte: 10 } },
+      when: { chapterMin: 5, chapterMax: 7, once: true, condition: { owned: 'truck', gte: 5 } },
       options: [
         { label: 'Sell half the trucks', best: true, outcome: { sellBusinessHalf: 'truck', cashMonths: 12 },
           response: { who: 'glitch', text: 'a year upfront for trucks that pay back in three. take it.' } },
@@ -1148,7 +1151,7 @@
   ];
 
   // ---------------------------------------------------------------------------------------------
-  // 10.3 Achievements — each +1% global income (fully_booted +10%). `line` is the snark toast.
+  // 10.3 Achievements - each +1% global income (fully_booted +10%). `line` is the snark toast.
   // ---------------------------------------------------------------------------------------------
   const OWN10_LINES = {
     battery: ['Ten stands. A battery empire. Still mostly cardboard.'],
@@ -1171,7 +1174,7 @@
     { id: 'anything_helps', name: 'Anything Helps', desc: '100 sign clicks', when: { stat: 'signClicks', gte: 100 },
       line: 'A hundred clicks of cardboard. A dollar. Ish.' },
     { id: 'hat_rental', name: 'Hat Rental', desc: 'Take your first job', when: { jobTier: 1 },
-      line: 'The hat is a privilege. The hat is $0.30 a shift.' },
+      line: 'The hat is a privilege. Wear it with compliance.' },
     { id: 'zero_hero', name: 'Zero Hero', desc: 'Net worth crosses $0', when: { netWorth: 0 },
       line: 'You are now worth nothing. Congratulations. Really.' },
     { id: 'ka_chunk', name: 'Ka-Chunk', desc: 'Buy your first business', when: { ownedTotal: 1 },
@@ -1183,7 +1186,7 @@
     { id: 'burnout', name: 'Burnout', desc: 'Burn out for the first time', when: { custom: 'firstBurnout' },
       line: "Machines don't burn out. You are not a machine. Buy some." },
     { id: 'jackpot', name: 'Jackpot', desc: 'Land your first crit', when: { custom: 'firstCrit' },
-      line: 'x10! The punch clock is as surprised as you are.' },
+      line: 'x10! The Machine is as surprised as you are.' },
     { id: 'machine_owner_10', name: 'Machine Owner', desc: 'Own 10 businesses in total', when: { ownedTotal: 10 },
       line: 'Ten machines. Zero of them need a hat.' },
     { id: 'owner_100', name: 'Centurion', desc: 'Own 100 businesses in total', when: { ownedTotal: 100 },
@@ -1272,10 +1275,10 @@
     { id: 'wp_sidehustle', at: 10, name: 'Side Hustle', effect: { startBusinesses: { battery: 5 }, startJob: 'captcha' }, desc: 'Start with 5 battery stands and job 2.' },
     { id: 'wp_nightowl', at: 20, name: 'Night Owl', effect: { offlineEff: 0.75, offlineCapH: 12 }, desc: 'Offline 75% / 12 h.' },
     { id: 'wp_muscle', at: 35, name: 'Muscle Memory', effect: { milestoneMult: 1.1 }, desc: 'Milestones ×1.1.' },
-    { id: 'wp_fiq', at: 50, name: 'Financial IQ', effect: { upgradeCostMult: 0.5 }, desc: 'Systems upgrades −50%.' },
+    { id: 'wp_fiq', at: 50, name: 'Financial IQ', effect: { upgradeCostMult: 0.5 }, desc: 'Systems upgrades -50%.' },
     { id: 'wp_secondwind', at: 75, name: 'Second Wind', effect: { lifespan: 10 }, desc: '+10 lifespan.' },
     { id: 'wp_insider', at: 100, name: 'Insider', effect: { fastTrack: true }, desc: 'Fast Track without the rat-race exit.' },
-    { id: 'wp_mentor', at: 150, name: 'Mentor', effect: { preRead: ['L01', 'L02', 'L03', 'L04'] }, desc: 'L01–L04 pre-read.' },
+    { id: 'wp_mentor', at: 150, name: 'Mentor', effect: { preRead: ['L01', 'L02', 'L03', 'L04'] }, desc: 'L01-L04 pre-read.' },
   ];
 
   // ---------------------------------------------------------------------------------------------
@@ -1286,7 +1289,7 @@
     wageslave: {
       id: 'wageslave', title: 'YOU DIED A WAGE SLAVE', wisdomMult: CONST.WISDOM_MULT_WAGESLAVE, palette: 'grey',
       tombstone: {
-        template: 'HERE LIES {name} · 18–{age} · "WORKED HARD."',
+        template: 'HERE LIES {name} · 18-{age} · "WORKED HARD."',
         epitaph: 'WORKED HARD.',
         cause: 'CAUSE OF DEATH: TREADMILL.',
         stats: ['years worked', 'shifts', 'clicks', 'peak net worth', 'freedom % at death', 'interest paid to Repo-Tron', 'doodads bought', 'pages read'],
@@ -1311,7 +1314,7 @@
     free: {
       id: 'free', title: 'FREE, BUT GONE', wisdomMult: CONST.WISDOM_MULT_DIED_FREE, palette: 'grey',
       tombstone: {
-        template: 'HERE LIES {name} · 18–{age} · "OWNED THINGS."',
+        template: 'HERE LIES {name} · 18-{age} · "OWNED THINGS."',
         epitaph: 'OWNED THINGS.',
         cause: 'CAUSE OF DEATH: THE CLOCK.',
         stats: ['years free', 'shifts', 'clicks', 'peak net worth', 'passive at death', 'toll progress', 'doodads bought', 'pages read'],
@@ -1334,7 +1337,7 @@
       id: 'escaped', title: 'YOU ESCAPED BOTLANDIA', wisdomMult: CONST.WISDOM_MULT_ESCAPED, palette: 'sunrise',
       wisdomBonus: CONST.ESCAPE_WISDOM_BONUS,
       lines: [
-        { who: 'mainframe', text: 'UNIT 4471 NOT FOUND. NOT FOUND. NOT FOU—' },
+        { who: 'mainframe', text: 'UNIT 4471 NOT FOUND. NOT FOUND. NOT FOU-' },
         { who: 'maya', text: 'Told you. Sunrise.' },
         { who: 'glitch', text: "the treadmill's still running. it just doesn't have you." },
         { who: 'you', text: 'What now?' },
@@ -1354,14 +1357,14 @@
       fx: ['gate grinds open in three shudders', 'every owned building lights its windows', 'treadmill billboard shorts out',
         "Supe's tie falls off", "Repo-Tron's counter reads $0.00 then ¯\\_(ツ)_/¯", 'sunrise palette', 'chiptune swells'],
       tips: [
-        { when: { stat: 'doodadsBought', gte: 1 }, text: 'You bought {doodadsBought} doodads and escaped anyway. The assets paid.' },
+        { when: { stat: 'doodadsBought', gte: 1 }, text: 'You bought {doodadsBought} and escaped anyway. The assets paid.' },
         { when: { all: [] }, text: 'Interest paid: {interestPaid}. Interest earned: {interestEarned}. Owner.' },
       ],
     },
   };
 
   // ---------------------------------------------------------------------------------------------
-  // 13. Tutorial — arrow + <= 8-word caption, completes by doing. `target` is a CSS selector hint.
+  // 13. Tutorial - arrow + <= 8-word caption, completes by doing. `target` is a CSS selector hint.
   // ---------------------------------------------------------------------------------------------
   const TUTORIAL = [
     { id: 'tut_click', target: '#machine', text: 'CLICK THE SIGN', done: { stat: 'lifetimeClicks', gte: 15 } },
@@ -1489,7 +1492,7 @@
     firstCrash: 'a market crash has started at least once',
     investmentAboveBasis: 'any holding with value > basis (basis > 0)',
     passiveBeatsClicks: 'passivePerSec > clickValue * 3 for the first time',
-    firstOverdraft: 'negative cash was moved to debt at least once',
+    firstOverdraft: 'negative cash was moved to debt at least once after owning a business',
     firstBotFlu: 'the Bot-Flu health event has fired at least once',
     idleCash20x: 'cash >= 20 x cheapest affordable business cost for 60 s without a purchase',
     firstHealthItem: 'any HEALTH_ITEMS bought',

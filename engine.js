@@ -1,4 +1,4 @@
-/* engine.js — pure game rules for ESCAPE BOTLANDIA (global `Engine`): tick, click, buy, invest, events, chapters, death, prestige, save/load. */
+/* engine.js - pure game rules for ESCAPE BOTLANDIA (global `Engine`): tick, click, buy, invest, events, chapters, death, prestige, save/load. */
 /*
  * Notes for downstream modules (ui.js / main.js / tools):
  *  - Every timer the engine keeps (burnoutUntil, powerups[id].until/cooldownUntil, frenzyUntil,
@@ -7,7 +7,7 @@
  *    ms. `now` (ms) is only used for created/lastSeen/playMs and the RNG seed. Compare with
  *    derived.gameSeconds. This keeps saves, offline time and the headless sim deterministic.
  *  - Lesson status: 'queued' (trigger met, waiting for the 3-minute gate) -> 'new' (envelope on the
- *    HUD, Engine.readLesson accepts it) -> 'read'. L01–L04 (the tutorial pages) bypass the gate.
+ *    HUD, Engine.readLesson accepts it) -> 'read'. L01-L04 (the tutorial pages) bypass the gate.
  *  - state.events.pending = { id, since, doodadId?, jobId? } is the open choice modal; the UI must
  *    call Engine.answerEvent(state, pending.id, optionIndex, now). derived.pendingEvent carries the
  *    substituted {name}/{price}/{upkeep}/{toll} values and the visible options.
@@ -33,7 +33,7 @@
   const API = {};
 
   // ---------------------------------------------------------------------------------------------
-  // RNG — mulberry32. The stream is addressed by (seed, rngCalls) so a save resumes exactly.
+  // RNG - mulberry32. The stream is addressed by (seed, rngCalls) so a save resumes exactly.
   // ---------------------------------------------------------------------------------------------
   function rng(state) {
     state.rngCalls = (state.rngCalls | 0) + 1;
@@ -43,7 +43,7 @@
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
   }
   function rand(state, a, b) { return a + API.rng(state) * (b - a); }
-  // Box–Muller: one standard normal per two uniforms (the second normal is discarded on purpose so
+  // Box-Muller: one standard normal per two uniforms (the second normal is discarded on purpose so
   // the number of rng calls per price step is fixed and the stream stays easy to reason about).
   function gaussian(state) {
     let u1 = API.rng(state);
@@ -287,7 +287,7 @@
         diamondHands: false, bitbotMoon: false, bitbotCrater: false, ratRaceExitAt: NEG_INF, loanUnlocked: false,
         lastResult: '', lastHeldValue: 0, nextBizDiscount: 0, tenYearsWarned: false, lookUpWarned: false,
         deathAt: NEG_INF, escapedAt: NEG_INF, divThisMonth: 0, chapterAt: NEG_INF, nextAmbientAt: 30, criticalWarned: false,
-        deathCause: null, rank: null,
+        deathCause: null, rank: null, bizOverdrafts: 0, debtFreeSaid: false,
       },
       stats: {
         lifetimeEarned: 0, lifetimeClicks: 0, signClicks: 0, shifts: 0, interestPaid: 0, interestEarned: 0, taxesPaid: 0,
@@ -298,7 +298,7 @@
       whatIfs: [], calendar: { month: 0, year: 0 },
       split: { since: 0, clicks: 0, business: 0, dividends: 0, lastClicks: 0, lastBusiness: 0, lastDividends: 0 },
       taxDiscountUntil: 0, clickLossUntil: 0, clickMultUntil: 0, mods: null,
-      autoAcc: 0, pendingWisdom: 0, attempt: 1, hall: [],
+      autoAcc: 0, pendingWisdom: 0, attempt: 1, hall: [], overdraftDebt: 0,
       settings: { sound: true, music: true, reduceMotion: false, volume: 0.7 },
     };
     for (let i = 0; i < BIZ.length; i++) s.businesses[BIZ[i].id] = { owned: 0, level: 0, spent: 0, boostUntil: 0, auto: false };
@@ -326,8 +326,8 @@
       if (e.startJob) {
         const j = Data.byId['job:' + e.startJob];
         if (j) {
-          s.job.id = j.id; s.job.mandatedHousing = j.housing; s.flags.everEmployed = true;
-          if (housingTier(s.housing) < housingTier(j.housing)) s.housing = j.housing;
+          // You remember the job, not the lease: no housing mandate until your next promotion.
+          s.job.id = j.id; s.job.mandatedHousing = null; s.flags.everEmployed = true;
         }
       }
       if (e.lifespan) s.lifespan = Math.min(C.MAX_AGE, s.lifespan + e.lifespan);
@@ -346,9 +346,32 @@
   // ---------------------------------------------------------------------------------------------
   function investValueOf(state, id) { return state.investments[id].units * state.market[id].price; }
   function investTabUnlocked(state) { return state.chapter >= 5; }
+  // The Rich Dad move: buy an asset whose income covers the toy's upkeep, then buy the toy.
+  // coverPlan finds the cheapest bundle of one business that adds >= the monthly upkeep.
+  function coverPlan(state, d, doodad) {
+    if (!doodad) return null;
+    const need = doodad.upkeep * state.inflationMult;
+    const perMonth = C.SEC_PER_MONTH * (1 - d.taxBizBase);
+    let best = null;
+    for (let i = 0; i < BIZ.length; i++) {
+      const b = BIZ[i];
+      if (fastTrackLocked(state, b)) continue;
+      const e = state.businesses[b.id];
+      if (e.owned === 0 && !(i === 0 || state.businesses[BIZ[i - 1].id].owned > 0)) continue;
+      const base = bizGross(state, b, e, d.baseGlobal, true);
+      const gainOf = function (k) { return (bizGross(state, b, { owned: e.owned + k, level: e.level, boostUntil: 0 }, d.baseGlobal, true) - base) * perMonth; };
+      if (gainOf(2000) < need) continue;
+      let lo = 1, hi = 2000;
+      while (lo < hi) { const mid = (lo + hi) >> 1; if (gainOf(mid) >= need) hi = mid; else lo = mid + 1; }
+      const cost = bulkPrice(state, b, e.owned, lo);
+      if (!best || cost < best.cost) best = { bizId: b.id, count: lo, cost: cost, gain: gainOf(lo) };
+    }
+    return best;
+  }
   function assetsCanAfford(state, d, doodad) {
-    if (!doodad) return false;
-    return d.passiveMonthly >= d.expensesMonthly + doodad.upkeep * state.inflationMult && state.cash >= doodad.price;
+    if (!doodad || state.doodads[doodad.id]) return false;
+    const plan = coverPlan(state, d, doodad);
+    return !!plan && state.cash >= doodad.price + plan.cost;
   }
   function cheapestAffordableCost(state, d) {
     let best = Infinity;
@@ -381,7 +404,7 @@
       return false;
     },
     passiveBeatsClicks: function (s, d) { return s.flags.passiveBeatClicks || (ownedTotal(s) > 0 && d.passivePerSec > d.clickValue * 3); },
-    firstOverdraft: function (s) { return s.flags.overdrafts >= 1; },
+    firstOverdraft: function (s) { return s.flags.bizOverdrafts >= 1; },
     firstBotFlu: function (s) { return s.flags.botFlus >= 1; },
     idleCash20x: function (s) { return s.flags.idleCashSince > NEG_INF && s.gameSeconds - s.flags.idleCashSince >= 60; },
     firstHealthItem: function (s) { for (const k in s.healthItems) if (s.healthItems[k]) return true; return false; },
@@ -489,13 +512,13 @@
     }
     return dr + housingOf(state).healthDrift + state.mods.healthDriftItems;
   }
-  function bizGross(state, b, entry, global) {
+  function bizGross(state, b, entry, global, steady) {
     if (entry.owned <= 0) return 0;
     let mm = milestoneMult(entry.owned);
     if (mm > 1) mm *= state.mods.milestonePerk;
     let g = b.baseIncome * entry.owned * mm * upgradeMult(entry.level) * global;
     if (b.id === 'podtower') g *= state.mods.podtowerMult;
-    if (entry.boostUntil > state.gameSeconds) g *= C.MILESTONE_BOOST_MULT;
+    if (!steady && entry.boostUntil > state.gameSeconds) g *= C.MILESTONE_BOOST_MULT;
     return g;
   }
 
@@ -514,19 +537,25 @@
     if (powerupActive(state, 'energy')) puClick *= Data.byId['powerup:energy'].effect.clickMult;
     const events = state.frenzyUntil > gs ? state.frenzyMult : 1;
     const global = lessons * wisdomMult * achMult * strike * events;
+    // Steady state: what your assets pay without temporary boosts. The rat-race audit, the Exit Toll
+    // gate and offline income use this, so one Bot Strike or FRENZY can't fake three good months.
+    const baseGlobal = lessons * wisdomMult * achMult;
     // taxes
     const holiday = powerupActive(state, 'taxholiday');
     const disc = state.taxDiscountUntil > gs ? 0.85 : 1;
     const tx = function (rate) { return holiday ? 0 : Math.max(0, rate + m.taxPoints) * disc; };
     const taxJob = tx(C.TAX_JOB), taxBiz = tx(m.taxBiz), taxDiv = tx(C.TAX_DIV), taxGain = tx(m.taxGain);
+    const taxBizBase = Math.max(0, m.taxBiz + m.taxPoints), taxDivBase = Math.max(0, C.TAX_DIV + m.taxPoints);
     // businesses
-    let bookValue = 0, gross = 0;
+    let bookValue = 0, gross = 0, grossBase = 0;
     for (let i = 0; i < BIZ.length; i++) {
       const e = state.businesses[BIZ[i].id];
       bookValue += e.spent;
       gross += bizGross(state, BIZ[i], e, global);
+      grossBase += bizGross(state, BIZ[i], e, baseGlobal, true);
     }
     const bizNet = gross * (1 - taxBiz);
+    const bizNetBase = grossBase * (1 - taxBizBase);
     // investments + dividends (monthly, charged smoothly)
     let investValue = 0, divMonthlyGross = 0;
     for (let i = 0; i < INV.length; i++) {
@@ -548,7 +577,8 @@
     const livingMonthly = (rent + m.doodadUpkeep + m.healthUpkeep + extra + C.EXISTENCE_TAX) * state.inflationMult;
     const interestMonthly = state.debt * state.debtApr / 12 + state.loan * state.loanApr / 12;
     const expensesMonthly = livingMonthly + interestMonthly;
-    const passiveMonthly = (bizNet + divNetPerSec) * C.SEC_PER_MONTH;
+    const divNetBasePerSec = divMonthlyGross * (1 - taxDivBase) / C.SEC_PER_MONTH;
+    const passiveMonthly = (bizNetBase + divNetBasePerSec) * C.SEC_PER_MONTH; // steady state
     const netWorth = state.cash + bookValue + investValue - state.debt - state.loan;
     const freedomRatio = expensesMonthly > 0 ? passiveMonthly / expensesMonthly : (passiveMonthly > 0 ? 1e9 : 0);
     // click value at the current heat (no crit)
@@ -583,6 +613,8 @@
     o.expensesPerSec = expensesMonthly / C.SEC_PER_MONTH; o.livingPerSec = livingMonthly / C.SEC_PER_MONTH;
     o.netPerSec = o.passivePerSec - o.expensesPerSec;
     o.passiveMonthly = passiveMonthly; o.expensesMonthly = expensesMonthly; o.freedomRatio = freedomRatio;
+    o.passiveMonthlyNow = o.passivePerSec * C.SEC_PER_MONTH; o.boosted = strike > 1 || events > 1 || holiday;
+    o.bizNetBasePerSec = bizNetBase; o.divNetBasePerSec = divNetBasePerSec; o.baseGlobal = baseGlobal; o.taxBizBase = taxBizBase;
     o.ratRaceMonths = state.flags.ratRaceMonths; o.outOfRatRaceNow = outOfRatRaceNow;
     o.age = state.age; o.yearsLeft = Math.max(0, state.lifespan - state.age); o.lifespan = state.lifespan; o.health = state.health;
     o.healthDriftPerYear = healthDriftPerYear(state); o.critical = state.health < C.CRITICAL_HEALTH;
@@ -600,12 +632,12 @@
   const SCRATCH = {};
 
   // ---------------------------------------------------------------------------------------------
-  // derive(state) — everything the UI shows (§12.2). Called every frame: O(businesses+investments).
+  // derive(state) - everything the UI shows (§12.2). Called every frame: O(businesses+investments).
   // ---------------------------------------------------------------------------------------------
   function tabsUnlocked(state) {
     const t = [];
     if (state.chapter >= 2) t.push('work');
-    if (state.chapter >= 3 || state.cash >= 40 || ownedTotal(state) > 0) t.push('biz');
+    if (state.chapter >= 3 || state.cash >= 40 || ownedTotal(state) > 0 || state.flags.tabsOpened.biz) t.push('biz');
     if (state.chapter >= 5) t.push('invest');
     if (state.chapter >= 4) t.push('upgrades');
     if (state.chapter >= 4) t.push('life');
@@ -652,7 +684,7 @@
       il[i] = {
         id: inv.id, ticker: inv.ticker, name: inv.name, price: mk.price, units: h.units, value: value, basis: h.basis, gain: value - h.basis,
         yieldPerMonth: value * investYield(state, inv) / 12 * (1 - o.taxDiv), history: mk.history,
-        unlocked: investTabUnlocked(state) && evalCond(state, o, inv.unlock),
+        unlocked: investTabUnlocked(state) && (h.units > 0 || evalCond(state, o, inv.unlock)),
         dipPrice: inv.id === 'b500' && state.crash.dipUntil > gs ? mk.price * (1 - C.DIP_DISCOUNT) : mk.price,
       };
     }
@@ -711,7 +743,14 @@
     const options = [];
     for (let i = 0; i < ev.options.length; i++) {
       const op = ev.options[i];
-      options.push({ index: i, label: subst(op.label, tokens), visible: !op.requires || evalCond(state, d, op.requires) });
+      let label = subst(op.label, tokens);
+      let plan = null;
+      if (op.outcome && op.outcome.coverUpkeep) {
+        const dd = Data.byId['doodad:' + (p.doodadId || 'lambo')];
+        plan = coverPlan(state, d, dd);
+        if (plan) label += ': buy ' + plan.count + ' ' + Data.byId['business:' + plan.bizId].name + ' (' + fmtMoney(plan.cost) + ') to pay its upkeep';
+      }
+      options.push({ index: i, label: label, visible: !op.requires || evalCond(state, d, op.requires), plan: plan });
     }
     return { id: ev.id, who: ev.who, title: ev.title, text: subst(ev.text, tokens), options: options, doodadId: p.doodadId || null, since: p.since };
   }
@@ -762,18 +801,19 @@
     state.lessonQueue.push(id);
     return true;
   }
+  // One page per delivery; tutorial pages (L01-L04) need a shorter gap and may jump the queue.
   function deliverLessons(state) {
-    const gs = state.gameSeconds;
-    while (state.lessonQueue.length) {
-      const id = state.lessonQueue[0];
-      const gated = !TUTORIAL_PAGES[id] && gs - state.lastLessonAt < C.LESSON_GAP_S;
-      if (gated) break;
-      state.lessonQueue.shift();
-      if (state.lessons[id] === 'read') continue;
+    const since = state.gameSeconds - state.lastLessonAt;
+    const q = state.lessonQueue;
+    for (let i = 0; i < q.length; i++) {
+      const id = q[i];
+      if (state.lessons[id] === 'read') { q.splice(i--, 1); continue; }
+      if (since < (TUTORIAL_PAGES[id] ? C.LESSON_GAP_TUTORIAL_S : C.LESSON_GAP_S)) continue;
+      q.splice(i, 1);
       state.lessons[id] = 'new';
-      state.lastLessonAt = gs;
+      state.lastLessonAt = state.gameSeconds;
       push(state, { type: 'lesson', lessonId: id });
-      if (!TUTORIAL_PAGES[id]) break; // one non-tutorial page per delivery window
+      return;
     }
   }
   function checkLessons(state, d) {
@@ -825,7 +865,12 @@
     state.flags.overdraftThisMonth += amt;
     state.flags.debtEver = true;
     state.flags.debtFree = false;
-    if (state.flags.overdrafts === 1) say(state, 'repo', special('repo', 'overdraft'));
+    state.overdraftDebt = (state.overdraftDebt || 0) + amt;
+    // Only an overdraft after you own something counts as a lesson moment (the vagrant is always broke).
+    if (ownedTotal(state) > 0) {
+      state.flags.bizOverdrafts += 1;
+      if (state.flags.bizOverdrafts === 1) say(state, 'repo', special('repo', 'overdraft'));
+    }
     // One toast per month at most: bills paid by overdraft happen every tick while you're broke.
     if (firstThisMonth && amt >= 1) toast(state, 'OVERDRAFT: Repo-Tron paid your bills (+' + fmtMoney(amt) + ' debt)', 'warn');
     return amt;
@@ -837,7 +882,6 @@
     if (kind === 'clicks') { state.split.clicks += net; state.stats.clickEarned += net; }
     else if (kind === 'business') { state.split.business += net; state.stats.bizEarned += net; }
     else { state.split.dividends += net; state.stats.divEarned += net; state.stats.interestEarned += net; } // money your money earned
-    if (state.stats.peakNetWorth < state.cash) state.stats.peakNetWorth = state.cash; // refined in tick
   }
 
   // ---------------------------------------------------------------------------------------------
@@ -862,7 +906,7 @@
       state.job.shifts += 1; state.job.totalShifts += 1; state.job.shiftsThisYear += 1; state.stats.shifts += 1;
       if (job.tier >= C.GRIND_FATIGUE_JOB_TIER && state.job.totalShifts % C.GRIND_FATIGUE_SHIFTS === 0) {
         state.health = Math.max(0, state.health - 1);
-        toast(state, 'GRIND FATIGUE −1 health', 'warn');
+        toast(state, 'GRIND FATIGUE -1 health', 'warn');
       }
     } else if (!state.flags.everEmployed) {
       state.stats.signClicks += 1;
@@ -1088,7 +1132,7 @@
   // ---------------------------------------------------------------------------------------------
   // Investments (§5)
   // ---------------------------------------------------------------------------------------------
-  function investUnlocked(state, inv, d) { return investTabUnlocked(state) && evalCond(state, d || core(state, SCRATCH), inv.unlock); }
+  function investUnlocked(state, inv, d) { return investTabUnlocked(state) && (state.investments[inv.id].units > 0 || evalCond(state, d || core(state, SCRATCH), inv.unlock)); }
   function buyUnitsInternal(state, inv, cashAmount) {
     const mk = state.market[inv.id];
     const gs = state.gameSeconds;
@@ -1159,13 +1203,16 @@
     amount = Math.min(Number(amount) || 0, state.cash, state.debt);
     if (amount <= 0) return { ok: false, reason: 'nothing to pay' };
     state.cash -= amount; state.debt -= amount;
-    if (state.debt < 1e-6) {
-      state.debt = 0;
-      state.flags.debtFree = true;
-      push(state, { type: 'debtPaid' });
-      say(state, 'repo', special('repo', 'paidOff'), 6000);
-    }
+    state.overdraftDebt = Math.min(state.overdraftDebt || 0, state.debt);
+    if (state.debt < 1e-6) { state.debt = 0; state.overdraftDebt = 0; celebrateDebtFree(state); }
     return { ok: true, paid: amount };
+  }
+  function celebrateDebtFree(state) {
+    state.flags.debtFree = true;
+    if (state.flags.debtFreeSaid) return;
+    state.flags.debtFreeSaid = true;
+    push(state, { type: 'debtPaid' });
+    say(state, 'repo', special('repo', 'paidOff'), 6000);
   }
   function takeLoan(state, amount) {
     if (!state.mods.loanUnlocked) return { ok: false, reason: 'read L11 to unlock Bot-Bank' };
@@ -1255,7 +1302,7 @@
   }
 
   // ---------------------------------------------------------------------------------------------
-  // Choice events — "INCOMING TRANSMISSION" (§10.2). One pending modal at a time; the UI answers
+  // Choice events - "INCOMING TRANSMISSION" (§10.2). One pending modal at a time; the UI answers
   // with Engine.answerEvent. Outcomes follow the DSL documented at the top of data.js.
   // ---------------------------------------------------------------------------------------------
   const REPEAT_GAP_S = 480; // the same repeatable deck event never returns within 8 minutes
@@ -1285,7 +1332,7 @@
     if (w.once && fired > 0) return false;
     if (w.every === 'year' && state.events.yearFired[ev.id] === state.calendar.year) return false;
     if (w.oncePerCrash && state.events.crashFired[ev.id] === state.crash.count) return false;
-    if (w.repeatable && fired > 0 && gs - (state.events.lastFiredAt[ev.id] || NEG_INF) < REPEAT_GAP_S) return false;
+    if (w.repeatable && !w.every && fired > 0 && gs - (state.events.lastFiredAt[ev.id] || NEG_INF) < REPEAT_GAP_S) return false;
     if (w.condition && !evalCond(state, d, w.condition)) return false;
     return true;
   }
@@ -1362,7 +1409,7 @@
       if (API.rng(state) < o.penaltyChance) {
         const pen = Math.max(50, state.cash * o.penaltyPct);
         state.cash -= pen;
-        toast(state, 'R.E.S. PENALTY −' + fmtMoney(pen), 'warn');
+        toast(state, 'R.E.S. PENALTY -' + fmtMoney(pen), 'warn');
       } else toast(state, 'R.E.S.: NO ERRORS FOUND. SUSPICIOUS.', 'info');
     }
     if (o.clickIncomeLoss) state.clickLossUntil = gs + o.clickIncomeLoss * C.SEC_PER_MONTH;
@@ -1389,7 +1436,7 @@
           if (delta > 0) state.stats.lifetimeEarned += delta;
           toast(state, 'MOONCOIN ' + r.result + ' (' + (delta >= 0 ? '+' : '') + fmtMoney(delta) + ')', delta >= 0 ? 'money' : 'warn');
         }
-      } else if (inv && stake > 0) {
+      } else if (inv && stake > 0 && investTabUnlocked(state)) {
         buyUnitsInternal(state, inv, stake);
       }
     }
@@ -1431,6 +1478,10 @@
     if (o.doodad) {
       const id = o.doodad === 'offer' ? pending.doodadId : o.doodad;
       const D = Data.byId['doodad:' + id];
+      if (D && o.coverUpkeep) {
+        const plan = coverPlan(state, d, D);
+        if (plan) { buy(state, plan.bizId, plan.count); r.result = plan.count + ' ' + Data.byId['business:' + plan.bizId].name; }
+      }
       if (D) buyDoodadInternal(state, D, true); // "0% down!": Dan happily puts you into overdraft
     }
     if (o.doodadDeclined) state.stats.doodadsDeclined += 1;
@@ -1483,7 +1534,7 @@
         const x = API.rng(state);
         if (x < inv.rugPull.chancePerWeek) {
           mk.price *= inv.rugPull.factor;
-          if (h.units > 0) { state.flags.bitbotCrater = true; toast(state, 'BITBOT RUG PULL −' + Math.round((1 - inv.rugPull.factor) * 100) + '%', 'warn'); }
+          if (h.units > 0) { state.flags.bitbotCrater = true; toast(state, 'BITBOT RUG PULL -' + Math.round((1 - inv.rugPull.factor) * 100) + '%', 'warn'); }
         } else if (x < inv.rugPull.chancePerWeek + inv.moon.chancePerWeek) {
           mk.price *= inv.moon.factor;
           if (h.units > 0) { state.flags.bitbotMoon = true; toast(state, 'BITBOT TO THE MOON +' + Math.round((inv.moon.factor - 1) * 100) + '%', 'money'); }
@@ -1523,7 +1574,7 @@
     }
     push(state, { type: 'crash', factor: INV[0].crash * soft });
     push(state, { type: 'dipWindow', until: state.crash.dipUntil });
-    toast(state, 'MARKET CRASH! B500 −' + Math.round(INV[0].crash * soft * 100) + '%. BONDS UNTOUCHED. BUY THE DIP: 20 s', 'warn');
+    toast(state, 'MARKET CRASH! B500 -' + Math.round(INV[0].crash * soft * 100) + '%. BONDS UNTOUCHED. BUY THE DIP: 20 s', 'warn');
   }
 
   // ---------------------------------------------------------------------------------------------
@@ -1564,7 +1615,7 @@
         state.health = Math.max(0, state.health + C.BOTFLU_HEALTH);
         state.flags.botFlus += 1;
         say(state, 'doc', special('doc', 'flu'), 5000);
-        toast(state, 'BOT-FLU: −' + fmtMoney(costFlu) + ', −5 health', 'warn');
+        toast(state, 'BOT-FLU: -' + fmtMoney(costFlu) + ', -5 health', 'warn');
       }
       if (API.rng(state) < C.SECONDWIND_CHANCE * state.health / 100) {
         state.lifespan = Math.min(C.MAX_AGE, state.lifespan + 1);
@@ -1670,7 +1721,7 @@
   }
 
   // ---------------------------------------------------------------------------------------------
-  // tick(state, dtMs, now) — the simulation step. Timers are in game seconds (see header).
+  // tick(state, dtMs, now) - the simulation step. Timers are in game seconds (see header).
   // ---------------------------------------------------------------------------------------------
   const TICKD = {};
   const AMBIENT_BY_CHAPTER = [
@@ -1687,6 +1738,7 @@
     const v = d.clickValue;
     if (v <= 0) return;
     const job = jobOf(state);
+    if (state.luckyClicks > 0) state.luckyClicks -= 1;
     creditIncome(state, 'clicks', v, job ? v / Math.max(1e-9, 1 - d.taxJob) : v);
     if (job) { state.job.shifts += 1; state.job.totalShifts += 1; state.job.shiftsThisYear += 1; state.stats.shifts += 1; }
   }
@@ -1747,6 +1799,12 @@
     state.stats.interestPaid += interestPerSec * dt;
     state.stats.upkeepPaid += d.livingPerSec * dt;
     settleOverdraft(state);
+    // Unpaid bills are an overdraft: like a real bank, it is repaid automatically as money comes in.
+    if (state.overdraftDebt > 0 && state.cash > 0) {
+      const pay = Math.min(state.cash, state.overdraftDebt, state.debt);
+      state.cash -= pay; state.debt -= pay; state.overdraftDebt -= pay;
+      if (state.debt < 1e-6) { state.debt = 0; state.overdraftDebt = 0; }
+    }
 
     // calendar: weeks (markets) and months
     const w0 = Math.floor(gs0 / C.SEC_PER_WEEK), w1 = Math.floor(gs / C.SEC_PER_WEEK);
@@ -1765,7 +1823,7 @@
         push(state, { type: 'glitch', activeUntil: state.glitch.activeUntil });
       }
       // Market crashes, once you own paper assets
-      if (ownedInvestments(state) && state.crash.nextAt === 0) state.crash.nextAt = gs + rand(state, C.CRASH_MIN_S, C.CRASH_MAX_S);
+      if (state.chapter >= 5 && ownedInvestments(state) && state.crash.nextAt === 0) state.crash.nextAt = gs + rand(state, C.CRASH_MIN_S, C.CRASH_MAX_S);
       if (state.crash.nextAt > 0 && gs >= state.crash.nextAt && state.crash.until <= gs) startCrash(state);
       if (state.crash.active && state.crash.until <= gs) {
         state.crash.active = false;
@@ -1786,11 +1844,7 @@
     const f = state.flags;
     if (!f.bitbotVisible && investTabUnlocked(state) && evalCond(state, d, Data.byId['investment:bitbot'].unlock)) f.bitbotVisible = true;
     if (!f.passiveBeatClicks && state.job.id && ownedTotal(state) > 0 && d.passivePerSec > d.clickValue * 3) f.passiveBeatClicks = true;
-    if (f.debtEver && state.debt === 0 && !f.debtFree) {
-      f.debtFree = true;
-      push(state, { type: 'debtPaid' });
-      say(state, 'repo', special('repo', 'paidOff'), 6000);
-    }
+    if (f.debtEver && state.debt === 0 && !f.debtFree) celebrateDebtFree(state);
     if (state.chapter >= 3 && !offline) {
       const cheap = cheapestAffordableCost(state, d);
       if (cheap < Infinity && state.cash >= 20 * cheap) { if (f.idleCashSince === NEG_INF) f.idleCashSince = gs; }
@@ -1866,11 +1920,11 @@
     const secs = Math.min(elapsed, m.offlineCapH * 3600);
     const d = core(state, {});
     const cashBefore = state.cash - state.debt;
-    const earnedBiz = Math.max(0, d.bizNetPerSec) * secs * m.offlineBizEff;
-    const earnedDiv = Math.max(0, d.dividendPerSec) * secs * m.offlineEff;
+    const earnedBiz = Math.max(0, d.bizNetBasePerSec) * secs * m.offlineBizEff;
+    const earnedDiv = Math.max(0, d.divNetBasePerSec) * secs * m.offlineEff;
     const earned = earnedBiz + earnedDiv;
-    if (earnedBiz > 0) creditIncome(state, 'business', earnedBiz, earnedBiz / Math.max(1e-9, 1 - d.taxBiz));
-    if (earnedDiv > 0) creditIncome(state, 'dividends', earnedDiv, earnedDiv / Math.max(1e-9, 1 - d.taxDiv));
+    if (earnedBiz > 0) creditIncome(state, 'business', earnedBiz, earnedBiz / Math.max(1e-9, 1 - d.taxBizBase));
+    if (earnedDiv > 0) creditIncome(state, 'dividends', earnedDiv, earnedDiv / Math.max(1e-9, 1 - C.TAX_DIV));
     state.stats.offlineEarned += earned;
     // game time that passes while away (drives aging, rent and markets)
     const room = state.ending === 'escaped' ? OFFLINE_AGE_CAP_YEARS : Math.max(0, state.lifespan - 1 - state.age);
@@ -1920,6 +1974,8 @@
     if (!Data.byId['housing:' + o.housing]) o.housing = 'cardboard';
     if (o.job.id && !Data.byId['job:' + o.job.id]) o.job.id = null;
     o.chapter = Math.max(1, Math.min(Data.CHAPTERS.length, o.chapter | 0));
+    const pe = o.events.pending;
+    if (pe && (!Data.byId['event:' + pe.id] || (pe.doodadId && !Data.byId['doodad:' + pe.doodadId]))) o.events.pending = null;
     recompute(o);
     return o;
   }
@@ -1941,7 +1997,7 @@
     canEscape: canEscape, escape: escape, rebirth: rebirth, dieAndRestart: dieAndRestart, newGamePlus: rebirth,
     applyOffline: applyOffline, save: save, load: load,
     chapterFor: chapterFor, evalCond: function (state, c) { return evalCond(state, core(state, {}), c); },
-    wisdomForRun: wisdomForRun, rankFor: rankFor,
+    wisdomForRun: wisdomForRun, rankFor: rankFor, coverPlan: function (state, doodadId) { return coverPlan(state, core(state, {}), Data.byId['doodad:' + doodadId]); },
     fmt: fmt, fmtMoney: fmtMoney, fmtTime: fmtTime, fmtPct: fmtPct, subst: subst,
     cost: cost, bulkCost: bulkCost, maxAffordable: maxAffordable, milestoneMult: milestoneMult, nextMilestoneCount: nextMilestoneCount,
     recompute: recompute,

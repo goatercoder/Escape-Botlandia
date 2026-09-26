@@ -428,7 +428,7 @@ bigger, "!!" on crit); glow ring; screen shake 1 px at HUSTLIN', 3 px at OVERTIM
 A page arrives as a bouncing envelope on the HUD ("NEW PAGE"); it never blocks play (L01–L04 auto-open once,
 the tutorial). Each card: title, 2–4 sentences, an "IN BOTLANDIA:" tie-in, a **CLAIM** button that grants the
 reward. Read pages live in the LEDGER tab ("14/22 PAGES"). ≤ 1 new page per 3 minutes (queue the rest).
-Reading all 22 → achievement `fully_booted` (+10% income). Six pages carry a **×1.2 business income** reward (tuned from ×1.25 by the balance sim).
+Reading all 22 → achievement `fully_booted` (+10% income). Six pages carry a **×1.15 business income** reward (tuned from ×1.25 by the balance sim).
 
 | id | Title | Trigger (`Engine` implements) | Reward |
 |---|---|---|---|
@@ -436,21 +436,21 @@ Reading all 22 → achievement `fully_booted` (+10% income). Six pages carry a *
 | `L02` | Time for Money | first paid shift (first click with a job) | click value ×1.25 for 5 min |
 | `L03` | The Tax Bite | 20 shifts worked | one-time $50 "tax refund" |
 | `L04` | Assets vs Liabilities | BIZ tab first opened | next business purchase 50% off |
-| `L05` | Pay Yourself First | chapter 4 | **×1.2** business income |
+| `L05` | Pay Yourself First | chapter 4 | **×1.15** business income |
 | `L06` | Lifestyle Inflation | first Doodad Dan offer | Dan visits 30% less often |
-| `L07` | Compound Interest & Rule of 72 | INVEST tab first opened | **×1.2** business income |
+| `L07` | Compound Interest & Rule of 72 | INVEST tab first opened | **×1.15** business income |
 | `L08` | Index Funds | first B500 purchase | +1 year of growth applied instantly to B500 holdings |
 | `L09` | Dividends | first dividend received | unlock DRIP toggle |
 | `L10` | Risk vs Volatility | BitBot first visible | cash = 2 min of passive income (min $100) |
-| `L11` | Good Debt vs Bad Debt | chapter 5 start | unlocks Bot-Bank; loan APR 8% → 7%; **×1.2** |
-| `L12` | Diversification | own 3 asset classes or first crash | crashes 20% softer; **×1.2** |
+| `L11` | Good Debt vs Bad Debt | chapter 5 start | unlocks Bot-Bank; loan APR 8% → 7%; **×1.15** |
+| `L12` | Diversification | own 3 asset classes or first crash | crashes 20% softer; **×1.15** |
 | `L13` | Cash Flow vs Capital Gains | first investment worth more than its cost basis | capital gains tax 15% → 10% |
-| `L14` | Taxes: Earned vs Passive | passive $/s exceeds click $/s at 3 cps for the first time | business tax 21% → 18%; **×1.2** |
+| `L14` | Taxes: Earned vs Passive | passive $/s exceeds click $/s at 3 cps for the first time | business tax 21% → 18%; **×1.15** |
 | `L15` | Real Estate & Leverage | first `podtower` | Pod Tower income ×1.25 |
 | `L16` | Emergency Fund | first overdraft (cash < 0 moved to debt) or first Bot-Flu | cash = 1 month of expenses |
 | `L17` | Opportunity Cost | cash ≥ 20× cheapest affordable business, idle 60 s | "Future Me" tooltip (any price → value in 20 yrs at 8%) |
 | `L18` | Time Is the Scarcest Asset | first Doc Module purchase or age 40 | +6 months of life |
-| `L19` | Build Systems, Not Jobs | Manager Bots or Clone bought | **×1.2** |
+| `L19` | Build Systems, Not Jobs | Manager Bots or Clone bought | **×1.15** |
 | `L20` | The Freedom Number | freedom meter first ≥ 100% | Exit Toll −10% |
 | `L21` | Inflation | game year 10 (age 28) | expense inflation 3% → 1.5% |
 | `L22` | Delayed Gratification | Bot-Lambo event answered | doodad resale 30% → 50% |
@@ -781,6 +781,9 @@ Re-run whenever any multiplier, cost, toll or lifespan number changes.
 
 ### Tuning log (balance gate results)
 Chapters are strictly sequential (a chapter needs the previous one), at most one every 15 s so each scene lands.
-Rent starts in chapter 2 (a vagrant sleeps under the overpass for free). With the numbers above, `node tools/sim.js`
-on seeds 12345/777/4242/1/2 gives: greedy escapes at 104–130 min (age 59–70, so a little life extension is needed),
-the pure job grinder dies a wage slave at 114–121 min, the idle player escapes at 123–142 min.
+Rent starts in chapter 2 (a vagrant sleeps under the overpass for free). The rat-race audit and offline income use
+steady-state passive income (no Bot Strike, FRENZY, milestone ×2 or Tax Holiday), and unpaid bills are an overdraft
+that is repaid automatically from incoming cash. Ledger pages arrive at most one per 90 s (tutorial pages 40 s).
+With lesson rewards at ×1.15, `node tools/sim.js` on seeds 12345/777/4242/1/2 gives: greedy escapes at 119–146 min
+(age 66–76, so life extension is needed), the pure job grinder dies a wage slave at 114–124 min, the idle player
+escapes at 143–177 min.

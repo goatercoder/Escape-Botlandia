@@ -313,6 +313,8 @@
     // Mutable scene state
     // ---------------------------------------------------------------------------
     let st = null, dv = null, inited = false, runId = null;
+    // One id per life (a death keeps the same loop number, so the run alone can't tell lives apart).
+    const lifeKey = (s) => (s ? (s.run || 1) + '|' + (s.attempt || 1) + '|' + (s.created || 0) : null);
     let W = 1, H = 1, D = 1, dpr = 1, S = 4, cssW = 1, cssH = 1;
     const safeCss = { left: 0, right: 0, top: 0, bottom: 0 };
     let sL = 0, sR = 1, sT = 0, sB = 1, safeW = 1;
@@ -462,7 +464,7 @@
     }
     function initFromState() {
       inited = true;
-      runId = st ? st.run : null;
+      runId = lifeKey(st);
       for (const p of plots) {
         const e = st && st.businesses && st.businesses[p.id];
         p.prev = e ? (e.owned | 0) : 0; p.bornAt = -99; p.buyAt = -99;
@@ -1786,7 +1788,7 @@
       timers.flash = Math.max(0, timers.flash - dt * 4);
     }
     function startCrash() { if (!crash.on) { crash.on = true; crash.t0 = t; timers.bolt = 0.25; } }
-    function startDeath() { if (deathT < 0) { deathT = real; deathRun = st ? st.run : null; } }
+    function startDeath() { if (deathT < 0) { deathT = real; deathRun = lifeKey(st); } }
     function startEscape() {
       if (escapeT >= 0) return;
       escapeT = t; escBlend = 0;
@@ -1805,9 +1807,9 @@
     function update(dt) {
       if (!st && !dv) return;
       readState();
-      if (!inited || (st && st.run !== runId)) initFromState();
-      if (deathT >= 0 && !ending && st && st.run !== deathRun) deathT = -1;
-      if (escapeT >= 0 && ending !== 'escaped' && st && st.run !== runId) escapeT = -1;
+      if (!inited || (st && lifeKey(st) !== runId)) initFromState();
+      if (deathT >= 0 && !ending) deathT = -1;
+      if (escapeT >= 0 && ending !== 'escaped') escapeT = -1;
       if (ending && ending !== 'escaped') startDeath();
       if (ending === 'escaped') startEscape();
       if (escapeT >= 0) escBlend = Math.min(1, escBlend + dt / 1.5);

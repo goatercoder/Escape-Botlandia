@@ -70,9 +70,9 @@ The clock stops while you read a story scene or a card, so learning never costs 
 
 | Strategy | Outcome |
 |---|---|
-| Optimiser (clicks, promotions, best-payback buys) | escapes at 104–130 min, age 59–70: it needs a little life extension |
+| Optimiser (clicks, promotions, best-payback buys) | escapes at 119–146 min, age 66–76: it has to buy extra years |
 | Pure job grinder (never buys a business) | always dies a wage slave |
-| Idle after 5 minutes | survives the first hour and escapes late |
+| Idle after 5 minutes | survives, and escapes at 143–177 min |
 
 A normal human run takes roughly 2–3 hours.
 
@@ -99,7 +99,7 @@ docs/SPEC.md      the full design document and module contract
 ## Development
 
 ```
-npm test            # 64 rules tests + the balance gate
+npm test            # rules tests + the balance gate
 npm run check       # node --check on every module
 npm start           # serve on http://localhost:8080 (any static server works)
 node tools/sim.js   # print pacing for the three strategies

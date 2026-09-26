@@ -1,4 +1,4 @@
-/* main.js — boot, the game loop, autosave, offline progress and the glue between Engine, Scene, UI and audio. */
+/* main.js - boot, the game loop, autosave, offline progress and the glue between Engine, Scene, UI and audio. */
 (function () {
   'use strict';
   const SAVE_KEY = 'escape-botlandia-save-v1';
@@ -7,12 +7,12 @@
   const $ = (id) => document.getElementById(id);
 
   let state = null, scene = null, ui = null;
-  let lastFrame = 0, acc = 0, lastSave = 0, started = false;
+  let lastFrame = 0, acc = 0, lastSave = 0, started = false, resetting = false;
 
   // ---------------------------------------------------------------- persistence
   function storageGet() { try { return localStorage.getItem(SAVE_KEY); } catch (e) { return null; } }
   function storageSet(v) { try { localStorage.setItem(SAVE_KEY, v); return true; } catch (e) { return false; } }
-  function save() { if (state && started) { state.lastSeen = Date.now(); storageSet(Engine.save(state)); lastSave = performance.now(); } }
+  function save() { if (state && started && !resetting) { state.lastSeen = Date.now(); storageSet(Engine.save(state)); lastSave = performance.now(); } }
   function exportSave() { try { return btoa(unescape(encodeURIComponent(Engine.save(state)))); } catch (e) { return ''; } }
   function importSave(code) {
     let json = code;
@@ -21,10 +21,13 @@
     if (!s) return false;
     s.lastSeen = Date.now();
     swapState(s);
+    // A finished life needs its ending card (and the REBOOT button) again.
+    if (s.ending === 'wageslave' || s.ending === 'free') s.queue.push({ type: 'death', ending: s.ending });
     save();
     return true;
   }
-  function hardReset() { try { localStorage.removeItem(SAVE_KEY); } catch (e) { /* ignore */ } location.reload(); }
+  // `resetting` stops the pagehide/beforeunload autosave from writing the game straight back.
+  function hardReset() { resetting = true; try { localStorage.removeItem(SAVE_KEY); } catch (e) { /* ignore */ } location.reload(); }
 
   // ---------------------------------------------------------------- scene (with a stub if scene.js is missing)
   const STUB = { setState() {}, setSafeArea() {}, event() {}, hitTest() { return null; }, start() {}, stop() {}, resize() {}, setReduceMotion() {} };
@@ -51,7 +54,7 @@
     const b = $('btn-sound'); b.classList.toggle('off', !s.sound);
   }
 
-  // ---------------------------------------------------------------- engine events → scene / audio
+  // ---------------------------------------------------------------- engine events > scene / audio
   function route(ev) {
     ui.handle(ev);
     switch (ev.type) {
@@ -59,7 +62,7 @@
         if (ev.businessId && ev.count > 0) scene.event('purchase', { businessId: ev.businessId, count: ev.count });
         if (ev.doodad) scene.event('doodad', { id: ev.doodad });
         break;
-      case 'milestone': scene.event('milestone', { businessId: ev.businessId, count: ev.count }); scene.event('parade', {}); break;
+      case 'milestone': scene.event('milestone', { businessId: ev.businessId, count: ev.count, mult: ev.mult }); break;
       case 'glitch': scene.event('glitch', {}); break;
       case 'glitchGone': scene.event('glitchGone', {}); break;
       case 'crash': scene.event('crash', {}); break;

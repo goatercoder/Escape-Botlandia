@@ -434,12 +434,12 @@ test('non-tutorial pages are spaced at least 3 minutes apart', () => {
   assert.equal(s.lessons.L07, 'queued');
 });
 
-test('x1.2 lesson rewards stack into business income', () => {
+test('lesson income rewards stack into business income', () => {
   const s = fresh();
   s.cash = 1000; E.buy(s, 'battery', 1);
   const g0 = E.derive(s).bizGrossPerSec;
   s.lessons.L05 = 'new'; E.readLesson(s, 'L05');
-  near(E.derive(s).bizGrossPerSec, g0 * 1.2);
+  near(E.derive(s).bizGrossPerSec, g0 * Data.byId['lesson:L05'].reward.value);
 });
 
 // ---------------------------------------------------------------- events
@@ -630,7 +630,7 @@ test('offline progress is capped, runs at 50% and ages you at most 2 years', () 
   const s = fresh();
   s.debt = 0; s.cash = 1e6; E.buy(s, 'truck', 10);
   s.cash = 0;
-  const bizNet = E.derive(s).bizNetPerSec;
+  const bizNet = E.derive(s).bizNetBasePerSec; // steady state: the milestone x2 does not run offline
   s.lastSeen = 0;
   const age0 = s.age;
   const r = E.applyOffline(s, 24 * 3600 * 1000);
@@ -666,4 +666,106 @@ test('derive() exposes everything the UI needs', () => {
   }
   assert.equal(d.businesses.length, 14);
   assert.equal(d.investments.length, 5);
+});
+
+// ---------------------------------------------------------------- review fixes
+test('temporary boosts do not count toward the rat-race audit', () => {
+  const s = fresh();
+  s.chapter = 6; s.debt = 0; s.cash = 1e6;
+  E.buy(s, 'battery', 20);
+  s.cash = 1e6;
+  const real = E.derive(s).freedomRatio;
+  s.frenzyUntil = s.gameSeconds + 100; s.frenzyMult = 7;
+  s.powerups.strike.until = s.gameSeconds + 100;
+  assert.equal(E.derive(s).freedomRatio, real, 'freedom uses steady-state passive income');
+  assert.ok(E.derive(s).passivePerSec > 0);
+  if (real < C.RAT_RACE_RATIO) {
+    for (let i = 0; i < 4; i++) E._internal.monthEnd(s, true);
+    assert.equal(s.flags.ratRaceExit, false);
+  }
+});
+
+test('unpaid bills (overdraft) are repaid automatically as money comes in', () => {
+  const s = fresh();
+  advance(s, 5);
+  const od = s.overdraftDebt;
+  assert.ok(od > 0 && s.debt > C.START_DEBT);
+  s.cash = 1000;
+  advance(s, 0.1);
+  assert.ok(s.overdraftDebt < 1e-9, 'overdraft swept');
+  assert.ok(Math.abs(s.debt - C.START_DEBT) < 1, 'the original fine stays until you pay it');
+  assert.ok(s.cash < 1000 && s.cash > 1000 - od - 5);
+});
+
+test('"let the assets buy it" buys a business that covers the upkeep, so freedom holds', () => {
+  const s = fresh();
+  s.chapter = 4; s.debt = 0; s.cash = 1e6;
+  E.buy(s, 'battery', 10); E.buy(s, 'vending', 5);
+  s.cash = 5e5;
+  const plan = E.coverPlan(s, 'hoverbike');
+  assert.ok(plan && plan.count > 0 && plan.gain >= 100 - 1e-6);
+  const before = E.derive(s);
+  s.events.pending = { id: 'doodad_offer', since: 0, doodadId: 'hoverbike' };
+  const view = E.derive(s).pendingEvent;
+  assert.ok(view.options[2].visible, 'option offered');
+  assert.match(view.options[2].label, /to pay its upkeep/);
+  E.answerEvent(s, 'doodad_offer', 2, 0);
+  const after = E.derive(s);
+  assert.ok(s.doodads.hoverbike);
+  assert.ok(after.passiveMonthly - after.expensesMonthly >= before.passiveMonthly - before.expensesMonthly - 1e-6, 'cash flow is not worse');
+  assert.ok(s.achievements.assets_bought_toy);
+});
+
+test('holding an investment keeps its card unlocked', () => {
+  const s = fresh();
+  s.chapter = 5; s.cash = 1e5; s.debt = 0;
+  s.businesses.drone = undefined; delete s.businesses.drone;
+  s.job.id = 'drone';
+  assert.ok(E.investBuy(s, 'bitbot', 1000).ok);
+  s.job.id = null; s.cash = 0;
+  const v = E.derive(s).investments.find((x) => x.id === 'bitbot');
+  assert.ok(v.unlocked);
+  assert.ok(E.investSell(s, 'bitbot', 1).ok);
+});
+
+test('the lottery "invest the $20" keeps the money before the INVEST tab exists', () => {
+  const s = fresh();
+  s.cash = 100;
+  s.events.pending = { id: 'lottery', since: 0 };
+  E.answerEvent(s, 'lottery', 2, 0);
+  assert.equal(s.investments.b500.units, 0);
+  assert.equal(s.cash, 100);
+});
+
+test('tutorial pages are spaced 40 s apart and jump ahead of gated pages', () => {
+  const s = fresh();
+  s.lessons.L08 = 'queued'; s.lessons.L01 = 'queued';
+  s.lessonQueue = ['L08', 'L01'];
+  s.lastLessonAt = s.gameSeconds - C.LESSON_GAP_TUTORIAL_S;
+  advance(s, 0.2);
+  assert.equal(s.lessons.L01, 'new');
+  assert.equal(s.lessons.L08, 'queued');
+});
+
+test('loading a save with a broken pending event drops the event', () => {
+  const s = fresh();
+  s.events.pending = { id: 'doodad_offer', since: 0, doodadId: 'nope' };
+  const t = E.load(E.save(s), 0);
+  assert.equal(t.events.pending, null);
+  E.derive(t);
+});
+
+test('the Side Hustle perk starts you employed without pricey housing', () => {
+  const s = E.newState(0, { seed: 1, wisdom: 12 });
+  assert.equal(s.job.id, 'captcha');
+  assert.equal(s.housing, 'cardboard');
+});
+
+test('LUCKY SHIFT is used up by auto-clicks too', () => {
+  const s = fresh();
+  E.takeJob(s, 'scrap');
+  s.upgrades.clone3 = true; E.recompute(s);
+  s.luckyClicks = 20;
+  advance(s, 5);
+  assert.equal(s.luckyClicks, 0);
 });

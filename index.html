@@ -27,12 +27,12 @@
         <span class="stat-value" id="tb-nw">-$2,000</span>
       </div>
       <div class="stat" data-tip="passive">
-        <span class="stat-label">PASSIVE</span>
-        <span class="stat-value good" id="tb-passive">+$0/s</span>
+        <span class="stat-label">PASSIVE /MO</span>
+        <span class="stat-value good" id="tb-passive">+$0</span>
       </div>
       <div class="stat" data-tip="expenses">
-        <span class="stat-label">EXPENSES</span>
-        <span class="stat-value bad" id="tb-exp">-$0/s</span>
+        <span class="stat-label">EXPENSES /MO</span>
+        <span class="stat-value bad" id="tb-exp">$0</span>
       </div>
       <div class="stat stat-freedom" id="tb-freedom-wrap" data-tip="freedom">
         <span class="stat-label"><span id="tb-freedom-title">FREEDOM</span> <span id="tb-freedom-pct">0%</span></span>
@@ -119,7 +119,12 @@
     </div>
 
     <div id="toasts" aria-live="polite"></div>
-    <div id="tutorial" hidden><div class="tut-arrow">▼</div><div class="tut-text" id="tut-text"></div></div>
+    <nav id="phone-nav" aria-label="Jump to">
+      <button class="btn" data-jump="hustle">HUSTLE</button>
+      <button class="btn" data-jump="shop">SHOP</button>
+      <button class="btn" data-jump="ledger">LEDGER</button>
+    </nav>
+    <div id="tutorial" hidden><div class="tut-arrow" id="tut-arrow">▼</div><div class="tut-text" id="tut-text"></div></div>
     <div id="tooltip" hidden></div>
     <div id="bubble" class="glitch-bubble" hidden></div>
     <div id="chapter-banner" hidden><div class="cb-kicker" id="cb-kicker">CHAPTER 1</div><div class="cb-title" id="cb-title">WAKE UP, 4471</div><div class="cb-unlocks" id="cb-unlocks"></div></div>

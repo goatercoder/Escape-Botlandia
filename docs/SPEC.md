@@ -47,7 +47,7 @@ contract that lets `data.js`, `engine.js`, `sprites*.js`, `scene.js`, `audio.js`
 | `TAX_DIV` | 0.15 | dividends / coupons |
 | `TAX_GAIN` | 0.15 | realized capital gains only (0.10 after lesson L13) |
 | `EXISTENCE_TAX` | 10 | $/month "Human Existence Tax", always charged |
-| `START_HEALTH` | 60 | 0..100 |
+| `START_HEALTH` | 80 | 0..100 (tuned up from 60 so health becomes a mid-game concern, not a minute-20 one) |
 | `HEAT_PER_CLICK` | 2.0 | hustle meter |
 | `HEAT_DECAY_PER_SEC` | 3.0 | |
 | `BURNOUT_LOCK_MS` | 8000 | |
@@ -113,13 +113,13 @@ Supervisor 9-2-5 as a choice event (`promotion`) the moment both are met (accept
 
 | # | id | Job | Gross $/click | Shifts to unlock next | Cert cost | Mandated housing |
 |---|---|---|---|---|---|---|
-| 1 | `scrap` | Scrap Sorter | 5 | 60 | 0 | `cardboard` |
-| 2 | `captcha` | Captcha Solver | 14 | 150 | 100 | `sleeping` |
-| 3 | `labeler` | Data Labeler | 40 | 250 | 800 | `sleeping` |
-| 4 | `drone` | Drone Delivery Runner | 120 | 350 | 6,000 | `micro` |
-| 5 | `turing` | Turing Tester | 400 | 450 | 50,000 | `micro` |
-| 6 | `manager` | Bot-Corp Middle Manager | 1,400 | 600 | 400,000 | `condo` |
-| 7 | `exec` | Compliance Executive | 4,000 | — | 3,000,000 | `exec` |
+| 1 | `scrap` | Scrap Sorter | 5 | 150 | 0 | `cardboard` |
+| 2 | `captcha` | Captcha Solver | 14 | 400 | 250 | `sleeping` |
+| 3 | `labeler` | Data Labeler | 40 | 700 | 2,500 | `sleeping` |
+| 4 | `drone` | Drone Delivery Runner | 120 | 1,000 | 25,000 | `micro` |
+| 5 | `turing` | Turing Tester | 400 | 1,300 | 150,000 | `micro` |
+| 6 | `manager` | Bot-Corp Middle Manager | 1,400 | 1,600 | 1,000,000 | `condo` |
+| 7 | `exec` | Compliance Executive | 4,000 | — | 10,000,000 | `exec` |
 
 - Taking the first job (`scrap`) is free and instant (tutorial). Jobs are only unlocked in order.
 - **Quit Job** always available (with a confirm + Supe's meltdown). Quitting lifts the housing mandate.
@@ -133,10 +133,10 @@ Supervisor 9-2-5 as a choice event (`promotion`) the moment both are met (accept
 | id | Name | Rent/mo | Health drift/yr | Click mult | Status |
 |---|---|---|---|---|---|
 | `cardboard` | Cardboard Pod | 25 | −3 | 1.00 | 0 |
-| `sleeping` | Sleeping Pod | 150 | −1 | 1.05 | 0 |
-| `micro` | Micro-Apartment | 800 | 0 | 1.10 | 0 |
-| `condo` | Condo | 6,000 | +1 | 1.15 | 1 |
-| `exec` | Exec Suite | 50,000 | +2 | 1.25 | 2 |
+| `sleeping` | Sleeping Pod | 300 | −1 | 1.05 | 0 |
+| `micro` | Micro-Apartment | 2,400 | 0 | 1.10 | 0 |
+| `condo` | Condo | 18,000 | +1 | 1.15 | 1 |
+| `exec` | Exec Suite | 120,000 | +2 | 1.25 | 2 |
 
 The player may upgrade housing voluntarily (LIFE tab) and may downgrade only to the tier their job
 mandates (or any tier when unemployed). Landlord Unit raises rent 3%/yr (inflation) with a line.
@@ -170,7 +170,7 @@ Formulas (pure, in `engine.js`):
 cost(b, owned)               = b.baseCost × b.costMult^owned
 bulkCost(b, owned, qty)      = b.baseCost × b.costMult^owned × (b.costMult^qty − 1) / (b.costMult − 1)
 maxAffordable(b, owned, cash)= floor( log( cash × (b.costMult − 1) / (b.baseCost × b.costMult^owned) + 1 ) / log(b.costMult) )
-milestoneMult(owned)         = Π over Data.MILESTONES [[10,1.5],[25,1.5],[50,2],[100,2],[200,3]]   // max ×13.5
+milestoneMult(owned)         = Π over Data.MILESTONES [[10,1.5],[25,1.5],[50,2],[100,2],[200,3]]   // max ×27
 upgradeMult(levels)          = 1.5^levels (0..3)
 grossPerSec(b)               = b.baseIncome × owned × milestoneMult × upgradeMult × bizGlobalMult
 netPerSec(b)                 = grossPerSec × (1 − taxBiz)
@@ -266,7 +266,8 @@ bar over a red bar with "PASSIVE $X/mo vs EXPENSES $Y/mo — 83%". Tooltip: "Gre
 and zero bad debt = you're out of the rat race."
 
 **Out of the rat race** (`state.flags.ratRaceExit`): `debt === 0 && freedomRatio ≥ RAT_RACE_RATIO` at
-`RAT_RACE_MONTHS` consecutive month-ends. Fires chapter 7, the treadmill sprite steps off, Fast Track unlocks,
+`RAT_RACE_MONTHS` consecutive month-ends, counted from chapter 6 (BRICKS) on (`RAT_RACE_FROM_CHAPTER`), so the exit is a
+mid-game milestone rather than a minute-3 accident. Fires chapter 7, the treadmill sprite steps off, Fast Track unlocks,
 Quit-Job nudge. If the ratio later drops below 1.0 the status is **kept** (chapter 7 doesn't regress) but
 `derived.outOfRatRaceNow` is false and the Exit cannot be paid until it is true again.
 
@@ -308,7 +309,8 @@ Random health events (rolled monthly with the seeded RNG): **Bot-Flu** `0.01 + 0
 ### Offline
 On load: `delta = min(now − lastSeen, OFFLINE_CAP_H × 3600)` seconds. Earn `passiveNet × delta × OFFLINE_EFF`,
 charge expenses for `delta` seconds, advance investments `delta / SEC_PER_WEEK` ticks, pay dividends,
-age `delta × OFFLINE_AGE_RATE / SEC_PER_YEAR` years clamped to `lifespan − 1`. The **WHILE YOU WERE AWAY** card
+age `delta × OFFLINE_AGE_RATE / SEC_PER_YEAR` years, **at most 2 years** per absence and clamped to `lifespan − 1`
+(rent and markets run for that same game time). The **WHILE YOU WERE AWAY** card
 states earned, spent, and "You aged 2.1 years." (Glitch: "passive income works while you sleep. so does rent.")
 
 ---
@@ -377,8 +379,8 @@ Sample lines live in `Data.CHARACTERS[id].lines` (ambient) and in chapter scenes
 | 2 | `punchin` | PUNCH IN | lifetimeClicks ≥ 15 | `clock` (Bot-Corp punch clock) | `wageslave` | LABOR UNIT | WORK tab, first job, R.E.S. tax chunk, housing rent |
 | 3 | `sidehustle` | THE SIDE HUSTLE | first business owned (BIZ tab appears at cash ≥ $40) | `register` (cash register) | `hustler` | SIDE-HUSTLER | BIZ tab, LEDGER tab, city district |
 | 4 | `treadmill` | THE TREADMILL | net worth ≥ $5,000 | `register` | `hustler` | TREADMILL RUNNER | Freedom meter, LIFE tab (housing, doodads, Doc Module, Medbay), UPGRADES tab, Doodad Dan, Landlord, Treadmill billboard |
-| 5 | `paper` | PAPER ASSETS | net worth ≥ $25,000 | `vault` (vault door) | `owner` | OWNER | INVEST tab (B500, MCU, BOND, BitBot), Bot-Bank lesson |
-| 6 | `bricks` | BRICKS | own ≥ 1 `podtower` or net worth ≥ $300,000 | `vault` | `investor` | INVESTOR | REIT, Bot-Bank leverage, Data Farm visible |
+| 5 | `paper` | PAPER ASSETS | net worth ≥ $50,000 | `vault` (vault door) | `owner` | OWNER | INVEST tab (B500, MCU, BOND, BitBot), Bot-Bank lesson |
+| 6 | `bricks` | BRICKS | own ≥ 1 `podtower` or net worth ≥ $1,000,000 | `vault` | `investor` | INVESTOR | REIT, Bot-Bank leverage, Data Farm visible |
 | 7 | `offtreadmill` | OFF THE TREADMILL | `flags.ratRaceExit` | `core` (golden core) | `tycoon` | [REDACTED] | Fast Track tiers 8–14, Quit-Job nudge, Managers |
 | 8 | `exitgate` | THE EXIT GATE | out of rat race now AND cash ≥ 10% of Exit Toll | `lever` (exit lever) | `tycoon` | [REDACTED] | Exit Gate appears in the city; EXIT button (pay toll) |
 
@@ -426,7 +428,7 @@ bigger, "!!" on crit); glow ring; screen shake 1 px at HUSTLIN', 3 px at OVERTIM
 A page arrives as a bouncing envelope on the HUD ("NEW PAGE"); it never blocks play (L01–L04 auto-open once,
 the tutorial). Each card: title, 2–4 sentences, an "IN BOTLANDIA:" tie-in, a **CLAIM** button that grants the
 reward. Read pages live in the LEDGER tab ("14/22 PAGES"). ≤ 1 new page per 3 minutes (queue the rest).
-Reading all 22 → achievement `fully_booted` (+10% income). Six pages carry a **×1.25 business income** reward.
+Reading all 22 → achievement `fully_booted` (+10% income). Six pages carry a **×1.2 business income** reward (tuned from ×1.25 by the balance sim).
 
 | id | Title | Trigger (`Engine` implements) | Reward |
 |---|---|---|---|
@@ -434,21 +436,21 @@ Reading all 22 → achievement `fully_booted` (+10% income). Six pages carry a *
 | `L02` | Time for Money | first paid shift (first click with a job) | click value ×1.25 for 5 min |
 | `L03` | The Tax Bite | 20 shifts worked | one-time $50 "tax refund" |
 | `L04` | Assets vs Liabilities | BIZ tab first opened | next business purchase 50% off |
-| `L05` | Pay Yourself First | chapter 4 | **×1.25** business income |
+| `L05` | Pay Yourself First | chapter 4 | **×1.2** business income |
 | `L06` | Lifestyle Inflation | first Doodad Dan offer | Dan visits 30% less often |
-| `L07` | Compound Interest & Rule of 72 | INVEST tab first opened | **×1.25** business income |
+| `L07` | Compound Interest & Rule of 72 | INVEST tab first opened | **×1.2** business income |
 | `L08` | Index Funds | first B500 purchase | +1 year of growth applied instantly to B500 holdings |
 | `L09` | Dividends | first dividend received | unlock DRIP toggle |
 | `L10` | Risk vs Volatility | BitBot first visible | cash = 2 min of passive income (min $100) |
-| `L11` | Good Debt vs Bad Debt | chapter 5 start | unlocks Bot-Bank; loan APR 8% → 7%; **×1.25** |
-| `L12` | Diversification | own 3 asset classes or first crash | crashes 20% softer; **×1.25** |
+| `L11` | Good Debt vs Bad Debt | chapter 5 start | unlocks Bot-Bank; loan APR 8% → 7%; **×1.2** |
+| `L12` | Diversification | own 3 asset classes or first crash | crashes 20% softer; **×1.2** |
 | `L13` | Cash Flow vs Capital Gains | first investment worth more than its cost basis | capital gains tax 15% → 10% |
-| `L14` | Taxes: Earned vs Passive | passive $/s exceeds click $/s at 3 cps for the first time | business tax 21% → 18%; **×1.25** |
+| `L14` | Taxes: Earned vs Passive | passive $/s exceeds click $/s at 3 cps for the first time | business tax 21% → 18%; **×1.2** |
 | `L15` | Real Estate & Leverage | first `podtower` | Pod Tower income ×1.25 |
 | `L16` | Emergency Fund | first overdraft (cash < 0 moved to debt) or first Bot-Flu | cash = 1 month of expenses |
 | `L17` | Opportunity Cost | cash ≥ 20× cheapest affordable business, idle 60 s | "Future Me" tooltip (any price → value in 20 yrs at 8%) |
 | `L18` | Time Is the Scarcest Asset | first Doc Module purchase or age 40 | +6 months of life |
-| `L19` | Build Systems, Not Jobs | Manager Bots or Clone bought | **×1.25** |
+| `L19` | Build Systems, Not Jobs | Manager Bots or Clone bought | **×1.2** |
 | `L20` | The Freedom Number | freedom meter first ≥ 100% | Exit Toll −10% |
 | `L21` | Inflation | game year 10 (age 28) | expense inflation 3% → 1.5% |
 | `L22` | Delayed Gratification | Bot-Lambo event answered | doodad resale 30% → 50% |
@@ -776,3 +778,9 @@ doc "Insert cash. Receive years. No refunds." · res "EARNED INCOME DETECTED. EX
 - **grinder** (3 clicks/s, promotions, health items, never buys a business): must **die a wage slave**.
 - **idle** (no clicks after minute 5, buys with whatever accrues): must not die before minute 60.
 Re-run whenever any multiplier, cost, toll or lifespan number changes.
+
+### Tuning log (balance gate results)
+Chapters are strictly sequential (a chapter needs the previous one), at most one every 15 s so each scene lands.
+Rent starts in chapter 2 (a vagrant sleeps under the overpass for free). With the numbers above, `node tools/sim.js`
+on seeds 12345/777/4242/1/2 gives: greedy escapes at 104–130 min (age 59–70, so a little life extension is needed),
+the pure job grinder dies a wage slave at 114–121 min, the idle player escapes at 123–142 min.

@@ -437,7 +437,7 @@
   const vendPanelLit = ['llll', 'rlyl', 'llll', 'nlrl', 'llll'];
   const vendAt = [];
   function vendingGrid(i) {
-    const W = [14, 24, 36, 48, 60][i]; const H = [20, 20, 28, 34, 46][i];
+    const W = [14, 24, 36, 48, 60][i]; const H = [20, 20, 28, 34, 54][i]; // level 4 is tall enough for its VEND-O sign
     const n = [1, 2, 3, 4, 5][i];
     let g = blank(W, H);
     const at = [];
@@ -768,7 +768,7 @@
   const wrench = ['k.k', 'kkk', '.k.', '.k.', '.k.'];
   const repairAt = [];
   function repairGrid(i) {
-    const W = [28, 40, 52, 60, 68][i]; const H = [20, 22, 24, 32, 44][i];
+    const W = [28, 40, 52, 60, 68][i]; const H = [28, 30, 32, 32, 44][i]; // room above the roof for the FIX sign
     const bays = [1, 2, 2, 3, 3][i];
     const storeys = [1, 1, 1, 1, 2][i];
     let g = blank(W, H);

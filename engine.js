@@ -836,7 +836,7 @@
     state.stats.taxesPaid += Math.max(0, gross - net);
     if (kind === 'clicks') { state.split.clicks += net; state.stats.clickEarned += net; }
     else if (kind === 'business') { state.split.business += net; state.stats.bizEarned += net; }
-    else { state.split.dividends += net; state.stats.divEarned += net; }
+    else { state.split.dividends += net; state.stats.divEarned += net; state.stats.interestEarned += net; } // money your money earned
     if (state.stats.peakNetWorth < state.cash) state.stats.peakNetWorth = state.cash; // refined in tick
   }
 
@@ -1848,7 +1848,7 @@
       const cashPart = amt * share;
       h.units += cashPart / state.market[inv.id].price; h.basis += cashPart;
     }
-    state.stats.lifetimeEarned += amt; state.stats.divEarned += amt; state.split.dividends += amt;
+    state.stats.lifetimeEarned += amt; state.stats.divEarned += amt; state.stats.interestEarned += amt; state.split.dividends += amt;
   }
 
   // ---------------------------------------------------------------------------------------------

@@ -127,6 +127,9 @@ h3.section:first-child { margin-top: 2px; }
 .stat-freedom.locked .freedom-bar { background: #2a2f55; }
 .stat-freedom.locked #tb-freedom-pct { color: var(--dim); }
 .stat-freedom.free .freedom-fill { background: linear-gradient(90deg, var(--green), var(--gold)); }
+.stat-freedom.toll .freedom-bar { background: #2a2f55; }
+.stat-freedom.toll .freedom-fill { background: var(--gold); min-width: 3px; }
+.stat-freedom.toll .freedom-goal { display: none; }
 .stat-life { flex-direction: row; align-items: center; gap: 8px; min-width: 210px; }
 #tb-heart { width: 28px; height: 28px; }
 .life-text { display: flex; flex-direction: column; }

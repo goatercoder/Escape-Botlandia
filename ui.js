@@ -454,7 +454,7 @@
             v.appendChild(statsRows([
               ['Escaped at age', S.age.toFixed(1)], ['Time played', Engine.fmtTime(S.playMs / 1000)], ['Clicks', S.stats.lifetimeClicks + ''],
               ['Net worth', fm(D.netWorth)], ['Passive vs expenses', fm(D.passiveMonthly) + ' / ' + fm(D.expensesMonthly) + ' a month'],
-              ['Interest paid vs earned', fm(S.stats.interestPaid) + ' / ' + fm(S.stats.interestEarned)], ['Ledger pages read', D.lessonsRead + '/22'],
+              ['Interest paid vs dividends + gains earned', fm(S.stats.interestPaid) + ' / ' + fm(S.stats.interestEarned)], ['Ledger pages read', D.lessonsRead + '/22'],
               ['Doodads declined', S.stats.doodadsDeclined + ''],
             ]));
             m.appendChild(v);
@@ -705,6 +705,7 @@
     const locked = S.chapter < 4;
     fw.classList.toggle('locked', locked);
     fw.classList.toggle('free', !!S.flags.ratRaceExit);
+    fw.classList.toggle('toll', !!(S.flags.ratRaceExit && S.chapter >= 7));
     if (locked) { $('tb-freedom-pct').textContent = 'LOCKED'; $('tb-freedom-fill').style.width = '0'; $('tb-freedom-title').textContent = 'FREEDOM'; }
     else {
       const pct = Math.min(1, D.freedomRatio / (C.RAT_RACE_RATIO / 0.8)); // gold line at 80% of the bar = 125%

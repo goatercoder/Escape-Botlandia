@@ -14,7 +14,7 @@
   const TICK_MS = 25;            // music scheduler interval
   const XFADE = 0.5;             // music crossfade when switching modes (s)
   const SFX_LEVEL = 0.9;         // sfx bus
-  const MUSIC_LEVEL = 0.7;       // music bus = musicVolume × this
+  const MUSIC_LEVEL = 0.55;      // music bus = musicVolume × this
   const LP_OPEN = 20000;         // master low-pass, open
   const LP_CLOSED = 320;         // master low-pass, death scene
   const SILENT = 0.0001;         // exponential ramps can't reach 0
@@ -71,8 +71,9 @@
   // ---------------------------------------------------------------------------
   // Engine: the node graph for one context (the realtime one, or an OfflineAudioContext for tests)
   //   sfx bus ─┐
-  //            ├─> master gain ─> low-pass ─> compressor (limiter) ─> safety soft-clip ─> destination
-  //   music ───┘
+  //            ├─> low-pass ─> master gain ─> compressor (limiter) ─> safety soft-clip ─> destination
+  //   music ───┘                   ^
+  //   dry sfx bus ─────────────────┘   (the death stinger stays clear while lowpass(true) muffles the world)
   // ---------------------------------------------------------------------------
   function guardCurve() {
     // Identity below 0.9, then a tanh knee that tops out at ~0.972 (inputs beyond ±1 clamp to the ends).
@@ -103,21 +104,24 @@
     e.lp.Q.value = 0.707;
     e.lp.frequency.value = settings.lowpass ? LP_CLOSED : lpOpen(ctx);
     e.comp = ctx.createDynamicsCompressor();
-    e.comp.threshold.value = -8;
-    e.comp.knee.value = 4;
-    e.comp.ratio.value = 16;
+    e.comp.threshold.value = -6;
+    e.comp.knee.value = 3;
+    e.comp.ratio.value = 20;
     e.comp.attack.value = 0.002;
-    e.comp.release.value = 0.18;
+    e.comp.release.value = 0.15;
     e.guard = ctx.createWaveShaper();
     e.guard.curve = guardCurve();
     e.sfx = ctx.createGain();
     e.sfx.gain.value = SFX_LEVEL;
+    e.dry = ctx.createGain();
+    e.dry.gain.value = SFX_LEVEL;
     e.mus = ctx.createGain();
     e.mus.gain.value = musicLevel();
-    e.sfx.connect(e.master);
-    e.mus.connect(e.master);
-    e.master.connect(e.lp);
-    e.lp.connect(e.comp);
+    e.sfx.connect(e.lp);
+    e.mus.connect(e.lp);
+    e.lp.connect(e.master);
+    e.dry.connect(e.master);
+    e.master.connect(e.comp);
     e.comp.connect(e.guard);
     e.guard.connect(ctx.destination);
     e.noise = makeNoise(ctx);
@@ -169,7 +173,7 @@
     if (idx >= 0) e.voices.splice(idx, 1);
   }
 
-  function voiceStart(e, t, level, prio) {
+  function voiceStart(e, t, level, prio, dry) {
     prune(e, t);
     if (prio === 0) {
       // clicks: cap their own share of the pool first so they can't starve stingers
@@ -184,7 +188,7 @@
     }
     const out = e.ctx.createGain();
     out.gain.value = level;
-    out.connect(e.sfx);
+    out.connect(dry ? e.dry : e.sfx);
     const v = { out: out, srcs: [], end: t, prio: prio, live: 0, dead: false, released: false };
     e.voices.push(v);
     return v;
@@ -208,6 +212,9 @@
     peak = Math.max(peak, SILENT * 2);
     a = Math.max(0.001, Math.min(a, dur * 0.9));
     hold = Math.max(0, Math.min(hold || 0, dur - a - 0.005));
+    // A GainNode is 1.0 until its first event; a source started at a sub-sample time can emit a frame
+    // before that event lands, so zero the intrinsic value too (otherwise: a full-scale 1-sample spike).
+    p.value = 0;
     p.setValueAtTime(SILENT, t);
     p.linearRampToValueAtTime(peak, t + a);
     if (hold > 0) p.setValueAtTime(peak, t + a + hold);
@@ -264,8 +271,8 @@
   // around 0.1 total, stingers 0.15–0.3. Everything is short except the story stingers.
   // ---------------------------------------------------------------------------
   function chunk(e, v, t, pm, peak) {
-    tone(e, v, { t: t, type: 'square', f: 180 * pm, f2: 105 * pm, dur: 0.04, a: 0.002, peak: peak || 0.09, lp: 2200 });
-    noise(e, v, { t: t, dur: 0.02, a: 0.001, peak: 0.05, type: 'bandpass', f: 2600 * pm, q: 0.9 });
+    tone(e, v, { t: t, type: 'square', f: 180 * pm, f2: 105 * pm, dur: 0.04, a: 0.002, peak: peak || 0.075, lp: 2200 });
+    noise(e, v, { t: t, dur: 0.02, a: 0.001, peak: 0.04, type: 'bandpass', f: 2600 * pm, q: 0.9 });
   }
 
   function bell(e, v, t, f, dur, peak) {
@@ -296,12 +303,12 @@
     clock: function (e, v, t, pm) { chunk(e, v, t, pm); },
     // register: chunk + 1200 Hz triangle ding
     register: function (e, v, t, pm) {
-      chunk(e, v, t, pm, 0.07);
+      chunk(e, v, t, pm, 0.06);
       tone(e, v, { t: t + 0.012, type: 'triangle', f: 1200 * pm, dur: 0.1, a: 0.002, peak: 0.055 });
     },
     // vault: low sine thump + short inharmonic metallic ring
     vault: function (e, v, t, pm) {
-      tone(e, v, { t: t, type: 'sine', f: 95 * pm, f2: 48 * pm, dur: 0.09, a: 0.003, peak: 0.18 });
+      tone(e, v, { t: t, type: 'sine', f: 95 * pm, f2: 48 * pm, dur: 0.09, a: 0.003, peak: 0.08 });
       tone(e, v, { t: t + 0.004, type: 'square', f: 1480 * pm, dur: 0.09, peak: 0.01, lp: 5000 });
       tone(e, v, { t: t + 0.004, type: 'sine', f: 2330 * pm, dur: 0.11, peak: 0.02 });
       noise(e, v, { t: t, dur: 0.015, peak: 0.035, type: 'highpass', f: 3000 });
@@ -310,14 +317,15 @@
     core: function (e, v, t, pm) { bell(e, v, t, 880 * pm, 0.14, 0.06); },
     // lever: heavy clunk and a latch click
     lever: function (e, v, t, pm) {
-      tone(e, v, { t: t, type: 'square', f: 120 * pm, f2: 55 * pm, dur: 0.075, a: 0.002, peak: 0.08, lp: 900 });
-      tone(e, v, { t: t, type: 'sine', f: 70 * pm, f2: 40 * pm, dur: 0.08, peak: 0.13 });
-      noise(e, v, { t: t, dur: 0.035, peak: 0.06, type: 'lowpass', f: 1400 });
+      tone(e, v, { t: t, type: 'square', f: 120 * pm, f2: 55 * pm, dur: 0.075, a: 0.002, peak: 0.045, lp: 900 });
+      tone(e, v, { t: t, type: 'sine', f: 70 * pm, f2: 40 * pm, dur: 0.08, peak: 0.06 });
+      noise(e, v, { t: t, dur: 0.035, peak: 0.045, type: 'lowpass', f: 1400 });
       noise(e, v, { t: t + 0.03, dur: 0.012, peak: 0.03, type: 'highpass', f: 3500 });
     }
   };
 
   // prio 0 = click-like (may be dropped/stolen first), 1 = stinger. gap = min seconds between repeats.
+  // dry = bypass the master low-pass.
   const SFX = {
     click: { prio: 0, gap: 0.018, fn: function (e, v, t, pm, o) { CLICK[o.form](e, v, t, pm); } },
 
@@ -334,14 +342,14 @@
     crit: { prio: 1, gap: 0.05, fn: function (e, v, t, pm) {
       const seq = [72, 76, 79, 84];
       for (let i = 0; i < seq.length; i++) {
-        tone(e, v, { t: t + i * 0.045, wave: 0.25, f: mtof(seq[i]) * pm, dur: i === 3 ? 0.24 : 0.07, a: 0.002, peak: 0.075, lp: 6000 });
+        tone(e, v, { t: t + i * 0.045, wave: 0.25, f: mtof(seq[i]) * pm, dur: i === 3 ? 0.26 : 0.07, a: 0.002, peak: 0.13, lp: 6000 });
       }
       noise(e, v, { t: t + 0.135, dur: 0.2, a: 0.004, peak: 0.03, type: 'highpass', f: 6500 });
     } },
 
     buy: { prio: 1, gap: 0.05, fn: function (e, v, t, pm) {
-      tone(e, v, { t: t, type: 'square', f: mtof(79) * pm, dur: 0.07, a: 0.002, peak: 0.07, lp: 4000 });
-      tone(e, v, { t: t + 0.075, type: 'square', f: mtof(84) * pm, dur: 0.15, a: 0.002, peak: 0.07, lp: 4000 });
+      tone(e, v, { t: t, type: 'square', f: mtof(79) * pm, dur: 0.07, a: 0.002, peak: 0.085, lp: 4000 });
+      tone(e, v, { t: t + 0.075, type: 'square', f: mtof(84) * pm, dur: 0.15, a: 0.002, peak: 0.085, lp: 4000 });
     } },
 
     chaching: { prio: 1, gap: 0.05, fn: function (e, v, t, pm) {
@@ -367,8 +375,9 @@
       const seq = [72, 76, 74, 77, 76, 79, 77, 81, 79, 84];
       for (let i = 0; i < seq.length; i++) {
         const last = i === seq.length - 1;
-        tone(e, v, { t: t + i * 0.04, wave: 0.125, f: mtof(seq[i]) * pm, dur: last ? 0.35 : 0.06, a: 0.002, peak: 0.055, lp: 6000 });
+        tone(e, v, { t: t + i * 0.04, wave: 0.125, f: mtof(seq[i]) * pm, dur: last ? 0.4 : 0.06, a: 0.002, peak: 0.085, lp: 6000 });
       }
+      tone(e, v, { t: t + 0.36, type: 'triangle', f: mtof(72) * pm, dur: 0.45, a: 0.003, hold: 0.1, peak: 0.08 });
       tone(e, v, { t: t + 0.4, type: 'triangle', f: mtof(96) * pm, dur: 0.3, a: 0.002, peak: 0.03 });
     } },
 
@@ -393,7 +402,7 @@
       const scale = [0, 2, 4, 7, 9];
       for (let i = 0; i < 12; i++) {
         const m = 79 + pick(scale) + (Math.random() < 0.4 ? 12 : 0);
-        tone(e, v, { t: t + i * 0.03 + rnd(0, 0.008), wave: pick([0.125, 0.25]), f: mtof(m) * rnd(0.99, 1.01), dur: 0.05, a: 0.001, peak: rnd(0.03, 0.05), lp: 7000 });
+        tone(e, v, { t: t + i * 0.03 + rnd(0, 0.008), wave: pick([0.125, 0.25]), f: mtof(m) * rnd(0.99, 1.01), dur: 0.05, a: 0.001, peak: rnd(0.05, 0.07), lp: 7000 });
       }
       noise(e, v, { t: t + 0.1, dur: 0.05, a: 0.001, peak: 0.03, type: 'bandpass', f: 5000, q: 4 });
       noise(e, v, { t: t + 0.25, dur: 0.03, a: 0.001, peak: 0.025, type: 'bandpass', f: 7000, q: 4 });
@@ -413,7 +422,7 @@
 
     heartbeat: { prio: 1, gap: 0.3, fn: function (e, v, t) { thump(e, v, t, 0.24); thump(e, v, t + 0.2, 0.17); } },
 
-    death: { prio: 1, gap: 1, fn: function (e, v, t) {
+    death: { prio: 1, gap: 1, dry: true, fn: function (e, v, t) {
       const phrase = [[69, 0.55], [65, 0.55], [64, 0.55], [62, 1.5]]; // A4 F4 E4 D4 — slow, D minor
       let at = t;
       for (let i = 0; i < phrase.length; i++) {
@@ -428,11 +437,11 @@
     escape: { prio: 1, gap: 1, fn: function (e, v, t) {
       const chord = [48, 55, 60, 64, 67, 72]; // C major, open voicing, swelling in
       for (let i = 0; i < chord.length; i++) {
-        tone(e, v, { t: t, type: 'sawtooth', f: mtof(chord[i]), dur: 3.4, a: 1.1, hold: 0.9, peak: 0.026, detune: i % 2 ? 7 : -7, lp: 500, lpTo: 3200, lpGlide: 1.4 });
+        tone(e, v, { t: t, type: 'sawtooth', f: mtof(chord[i]), dur: 3.4, a: 1.1, hold: 0.9, peak: 0.032, detune: i % 2 ? 7 : -7, lp: 500, lpTo: 3200, lpGlide: 1.4 });
       }
       const arp = [72, 76, 79, 84, 88, 91, 96];
       for (let i = 0; i < arp.length; i++) {
-        tone(e, v, { t: t + 0.9 + i * 0.09, wave: 0.25, f: mtof(arp[i]), dur: i === arp.length - 1 ? 0.8 : 0.3, a: 0.003, peak: 0.04, lp: 6000 });
+        tone(e, v, { t: t + 0.9 + i * 0.09, wave: 0.25, f: mtof(arp[i]), dur: i === arp.length - 1 ? 0.8 : 0.3, a: 0.003, peak: 0.05, lp: 6000 });
       }
       noise(e, v, { t: t + 1.5, dur: 1.4, a: 0.01, peak: 0.03, type: 'highpass', f: 6000 });
     } },
@@ -448,19 +457,19 @@
     } },
 
     whoosh: { prio: 1, gap: 0.08, fn: function (e, v, t) {
-      noise(e, v, { t: t, dur: 0.42, a: 0.16, peak: 0.11, type: 'bandpass', f: 300, f2: 3800, glide: 0.3, q: 1.8 });
+      noise(e, v, { t: t, dur: 0.42, a: 0.16, peak: 0.16, type: 'bandpass', f: 300, f2: 3800, glide: 0.3, q: 1.8 });
     } },
 
     promotion: { prio: 1, gap: 0.3, fn: function (e, v, t) {
       // "ding-dong-ding" corporate chime: G4 E5 C5
-      bell(e, v, t, mtof(67), 0.5, 0.1);
-      bell(e, v, t + 0.2, mtof(76), 0.5, 0.09);
-      bell(e, v, t + 0.4, mtof(72), 0.9, 0.1);
+      bell(e, v, t, mtof(67), 0.5, 0.12);
+      bell(e, v, t + 0.2, mtof(76), 0.5, 0.11);
+      bell(e, v, t + 0.4, mtof(72), 0.9, 0.12);
     } },
 
     debt: { prio: 1, gap: 0.3, fn: function (e, v, t) {
-      tone(e, v, { t: t, type: 'sawtooth', f: mtof(63), dur: 0.3, a: 0.01, hold: 0.15, peak: 0.075, lp: 1400 });
-      tone(e, v, { t: t + 0.3, type: 'sawtooth', f: mtof(58), f2: mtof(56.5), dur: 0.65, a: 0.01, hold: 0.3, peak: 0.075, lp: 1100 });
+      tone(e, v, { t: t, type: 'sawtooth', f: mtof(63), dur: 0.3, a: 0.01, hold: 0.15, peak: 0.095, lp: 1400 });
+      tone(e, v, { t: t + 0.3, type: 'sawtooth', f: mtof(58), f2: mtof(56.5), dur: 0.65, a: 0.01, hold: 0.3, peak: 0.095, lp: 1100 });
     } }
   };
   const NAMES = Object.keys(SFX);
@@ -475,7 +484,7 @@
     const pm = Math.pow(2, clamp(opts.pitch || 0, -24, 24) / 12);
     const level = opts.volume != null ? clamp(opts.volume, 0, 1.5) : 1;
     if (level <= 0) return false;
-    const v = voiceStart(e, t, level, def.prio);
+    const v = voiceStart(e, t, level, def.prio, def.dry);
     def.fn(e, v, t, pm, { form: form, pitch: opts.pitch });
     return true;
   }
@@ -535,6 +544,7 @@
     const g = ctx.createGain(), p = g.gain;
     const pk = o.peak, sus = pk * (o.sus != null ? o.sus : 0.6);
     const a = Math.min(o.a || 0.005, d * 0.3), dec = Math.min(0.1, d * 0.3), rel = Math.min(o.rel || 0.04, d * 0.3);
+    p.value = 0;
     p.setValueAtTime(0, t);
     p.linearRampToValueAtTime(pk, t + a);
     p.linearRampToValueAtTime(sus, t + a + dec);
@@ -633,6 +643,7 @@
     if (!has(SONGS, mode)) return;
     const song = SONGS[mode];
     const g = e.ctx.createGain();
+    g.gain.value = 0;
     g.gain.setValueAtTime(0, t);
     g.gain.linearRampToValueAtTime(1, t + fade);
     g.connect(e.mus);
@@ -827,7 +838,6 @@
         if (p && typeof p.then === 'function') p.then(resolve, function () { resolve(null); });
       });
     } catch (err) {
-      if (root.__AUDIO_DEBUG) root.__AUDIO_DEBUG(err);
       return Promise.resolve(null);
     }
   }
@@ -851,8 +861,7 @@
     FORMS: FORMS.slice(),
     MAX_VOICES: MAX_VOICES,
     _state: stateInfo,
-    _renderOffline: renderOffline,
-    _internals: { createEngine: createEngine, playOn: playOn }
+    _renderOffline: renderOffline
   };
 
   root.BotAudio = API;

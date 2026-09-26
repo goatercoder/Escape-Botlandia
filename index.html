@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Escape Botlandia</title>
+  <meta name="description" content="An 8-bit cash-flow tycoon game: start homeless and in debt, work a job, build businesses that pay you while you sleep, and escape the rat race before your time runs out.">
+  <meta name="theme-color" content="#0b0f2b">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' shape-rendering='crispEdges'%3E%3Crect width='16' height='16' fill='%230b0f2b'/%3E%3Crect x='3' y='3' width='10' height='10' fill='%23ffd166'/%3E%3Crect x='5' y='5' width='6' height='6' fill='%23c9971e'/%3E%3Crect x='7' y='4' width='2' height='8' fill='%23ffd166'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <!-- The city is the page background; the UI floats over it. -->
+  <canvas id="scene" aria-hidden="true"></canvas>
+  <canvas id="fx" aria-hidden="true"></canvas>
+  <div id="vignette" aria-hidden="true"></div>
+
+  <div id="app" hidden>
+    <!-- ================= TOP BAR ================= -->
+    <header id="topbar">
+      <div class="stat stat-cash" data-tip="cash">
+        <span class="stat-label">CASH</span>
+        <span class="stat-value" id="tb-cash">$0</span>
+      </div>
+      <div class="stat" data-tip="netWorth">
+        <span class="stat-label">NET WORTH</span>
+        <span class="stat-value" id="tb-nw">-$2,000</span>
+      </div>
+      <div class="stat" data-tip="passive">
+        <span class="stat-label">PASSIVE</span>
+        <span class="stat-value good" id="tb-passive">+$0/s</span>
+      </div>
+      <div class="stat" data-tip="expenses">
+        <span class="stat-label">EXPENSES</span>
+        <span class="stat-value bad" id="tb-exp">-$0/s</span>
+      </div>
+      <div class="stat stat-freedom" id="tb-freedom-wrap" data-tip="freedom">
+        <span class="stat-label"><span id="tb-freedom-title">FREEDOM</span> <span id="tb-freedom-pct">0%</span></span>
+        <div class="freedom-bar"><div class="freedom-fill" id="tb-freedom-fill"></div><div class="freedom-goal"></div></div>
+      </div>
+      <div class="stat stat-life" id="lifeclock" data-tip="lifespan">
+        <canvas id="tb-heart" width="16" height="16"></canvas>
+        <div class="life-text">
+          <span class="stat-value" id="tb-age">AGE 18</span>
+          <span class="stat-label" id="tb-left">44 YRS LEFT</span>
+        </div>
+        <div class="life-bars">
+          <div class="mini-bar" title="Life left"><div class="mini-fill life" id="tb-life-fill"></div></div>
+          <div class="mini-bar" title="Health"><div class="mini-fill health" id="tb-health-fill"></div></div>
+        </div>
+      </div>
+      <div class="top-buttons">
+        <button class="icon-btn" id="btn-sound" title="Sound (M)" aria-label="Toggle sound">♪</button>
+        <button class="icon-btn" id="btn-help" title="How to play" aria-label="How to play">?</button>
+        <button class="icon-btn" id="btn-settings" title="Settings" aria-label="Settings">⚙</button>
+      </div>
+    </header>
+
+    <div id="escape-banner" hidden>
+      <button class="btn gold big pulse" id="btn-escape">PAY THE TOLL &amp; ESCAPE BOTLANDIA</button>
+    </div>
+    <button id="glitch-btn" class="btn gold" hidden>✦ CATCH THE GOLDEN BOT ✦</button>
+
+    <!-- ================= LEFT: YOU ================= -->
+    <aside id="col-you" class="panel">
+      <div class="idcard">
+        <button class="avatar-frame" id="avatar-frame" title="That's you"><canvas id="avatar" width="48" height="72"></canvas></button>
+        <div class="id-text">
+          <div class="id-name" id="id-name" title="Click to rename">4471</div>
+          <div class="id-status" id="id-status">STATUS: VAGRANT</div>
+          <div class="id-chapter" id="id-chapter">CH.1 WAKE UP, 4471</div>
+          <div class="id-goal" id="id-goal">NEXT: Click the sign</div>
+        </div>
+        <button id="envelope" class="envelope" hidden title="Glitch left you a page"><canvas id="envelope-icon" width="32" height="32"></canvas><span id="envelope-count">1</span></button>
+      </div>
+
+      <div class="debt-chip" id="debt-chip" data-tip="debt">
+        <span class="debt-label">DEBT <b id="debt-amount">$2,000</b> <small id="debt-apr">12%/yr</small></span>
+        <span class="debt-buttons">
+          <button class="btn tiny" data-debt="100">$100</button>
+          <button class="btn tiny" data-debt="half">50%</button>
+          <button class="btn tiny red" data-debt="all">PAY ALL</button>
+        </span>
+      </div>
+
+      <div class="machine-wrap">
+        <button id="machine" class="machine" aria-label="Hustle">
+          <canvas id="machine-canvas" width="144" height="144"></canvas>
+          <span class="machine-ring" id="machine-ring"></span>
+        </button>
+        <div class="machine-caption"><span id="machine-verb">HOLD SIGN</span> <span id="machine-value">+$1.00</span></div>
+        <div id="burnout-overlay" hidden>BURNOUT <span id="burnout-left">8</span>s</div>
+        <div class="clone-arms" id="clone-arms" hidden></div>
+      </div>
+
+      <div class="hustle" data-tip="heat">
+        <div class="hustle-head"><span>HUSTLE</span><span id="hustle-label" class="hustle-label"></span><span id="hustle-mult">×1</span></div>
+        <div class="hustle-meter" id="hustle-meter"></div>
+      </div>
+
+      <div class="boosts" id="boosts" hidden></div>
+    </aside>
+
+    <!-- ================= RIGHT: THE MARKET ================= -->
+    <section id="col-market" class="panel">
+      <nav class="tabs" id="tabs" role="tablist"></nav>
+      <div class="tab-caption" id="tab-caption" hidden></div>
+      <div class="tab-body" id="tab-body"></div>
+      <div class="ticker"><div class="ticker-track" id="ticker"></div></div>
+    </section>
+
+    <!-- ================= DIALOGUE (docked bottom center) ================= -->
+    <div id="dialogue" class="dialogue" hidden>
+      <canvas id="dialogue-portrait" width="48" height="48"></canvas>
+      <div class="dialogue-body">
+        <div class="dialogue-who" id="dialogue-who"></div>
+        <div class="dialogue-text" id="dialogue-text"></div>
+      </div>
+    </div>
+
+    <div id="toasts" aria-live="polite"></div>
+    <div id="tutorial" hidden><div class="tut-arrow">▼</div><div class="tut-text" id="tut-text"></div></div>
+    <div id="tooltip" hidden></div>
+    <div id="bubble" class="glitch-bubble" hidden></div>
+    <div id="chapter-banner" hidden><div class="cb-kicker" id="cb-kicker">CHAPTER 1</div><div class="cb-title" id="cb-title">WAKE UP, 4471</div><div class="cb-unlocks" id="cb-unlocks"></div></div>
+  </div>
+
+  <!-- ================= MODALS ================= -->
+  <div id="modal-root" hidden><div class="modal" id="modal" role="dialog" aria-modal="true"></div></div>
+
+  <!-- ================= TITLE ================= -->
+  <div id="title-screen" hidden>
+    <div class="title-card">
+      <div class="title-kicker">AN 8-BIT CASH-FLOW TYCOON</div>
+      <h1 class="title-logo"><span>ESCAPE</span><span class="t2">BOTLANDIA</span></h1>
+      <p class="title-pitch">You are 18, homeless and <b class="bad">$2,000</b> in debt in a city run by bots.<br>You have <b class="gold">44 years</b>. A job pays for today. Assets pay forever.<br>Buy the things that pay you. Get off the treadmill. Get out.</p>
+      <label class="title-name">YOUR NAME <input id="title-name" maxlength="12" value="4471" autocomplete="off" spellcheck="false"></label>
+      <button class="btn gold big" id="btn-start">WAKE UP</button>
+      <div class="title-foot">Click to hustle · Space works too · Saves automatically</div>
+    </div>
+  </div>
+
+  <script src="data.js"></script>
+  <script src="engine.js"></script>
+  <script src="sprites.js"></script>
+  <script src="sprites-city.js"></script>
+  <script src="audio.js"></script>
+  <script src="scene.js"></script>
+  <script src="ui.js"></script>
+  <script src="main.js"></script>
+</body>
+</html>
